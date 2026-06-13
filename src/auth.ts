@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BASEURL || "http://localhost:5001",
+  baseURL: process.env.BASEURL || "https://api.hotelkeepa.com",
   database: prismaAdapter(prisma, {
     provider: "mysql",
   }),
@@ -82,9 +82,9 @@ export const auth = betterAuth({
     }),
   },
   trustedOrigins: [
-    "http://localhost:3000",
-    "https://hotelkeepa.com",
+    process.env.FRONTEND_URL!,
     "https://www.hotelkeepa.com",
+    "https://hotelkeepa.com",
   ],
   emailAndPassword: {
     enabled: true,

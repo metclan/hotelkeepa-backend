@@ -11,7 +11,11 @@ const PORT = process.env.PORT || 5001;
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://gadgetkeep.com"],
+    origin: [
+      process.env.FRONTEND_URL!,
+      "https://www.hotelkeepa.com",
+      "https://hotelkeepa.com",
+    ],
     credentials: true,
   }),
 );
