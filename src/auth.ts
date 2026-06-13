@@ -81,7 +81,11 @@ export const auth = betterAuth({
       });
     }),
   },
-  trustedOrigins: ["http://localhost:3000", "https://gadgetkeep.com"],
+  trustedOrigins: [
+    "http://localhost:3000",
+    "https://hotelkeepa.com",
+    "https://www.hotelkeepa.com",
+  ],
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
