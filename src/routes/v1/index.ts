@@ -11,12 +11,14 @@ import { reportRouter } from "./report.route.js";
 import { roleRouter } from "./role.route.js";
 import { locationRouter } from "./location.route.js";
 import { permissionRouter } from "./permission.route.js";
+import { loadPermissions } from "../../middleware/middleware.js";
 
 const router = Router();
 
 router.use("/onboard", onboardRouter);
 router.use("/settings", settingRouter);
 router.use(requireOnboarding);
+router.use(loadPermissions);
 router.use("/room-types", roomTypeRouter);
 router.use("/rooms", roomRouter);
 router.use("/customers", customerRouter);
