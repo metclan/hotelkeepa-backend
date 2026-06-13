@@ -6,7 +6,7 @@
   "scripts": {
     "auth:generate": "npx @better-auth/cli@latest generate",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "prisma:seed": "tsx --env-file=.env prisma/seed.ts"
   },

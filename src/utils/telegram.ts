@@ -2,16 +2,16 @@ import { PrismaClient } from "../generated/prisma/client.js";
 import TelegramBot from "node-telegram-bot-api";
 
 const isDevelopment = process.env.NODE_ENV === "development";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
-// Initialize the bot with your token
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN || "", {
-  polling: !isDevelopment, // Only enable polling in production
-});
+const bot = TELEGRAM_BOT_TOKEN
+  ? new TelegramBot(TELEGRAM_BOT_TOKEN, {
+      polling: !isDevelopment, // Only enable polling in production
+    })
+  : null;
 
 const prisma = new PrismaClient();
-
-// Your Telegram chat ID where messages will be sent
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 interface ErrorMessage {
   context?: Record<string, unknown>;
@@ -21,52 +21,54 @@ interface ErrorMessage {
 }
 
 // Handle /businesses command
-bot.onText(/\/businesses/, async (msg) => {
-  try {
-    // Only allow the configured chat ID to use this command
-    if (msg.chat.id.toString() !== CHAT_ID) {
-      await bot.sendMessage(msg.chat.id, "Unauthorized");
-      return;
-    }
+if (bot) {
+  bot.onText(/\/businesses/, async (msg) => {
+    try {
+      // Only allow the configured chat ID to use this command
+      if (msg.chat.id.toString() !== CHAT_ID) {
+        await bot.sendMessage(msg.chat.id, "Unauthorized");
+        return;
+      }
 
-    // Fetch all businesses with their owner information
-    const businesses = await prisma.business.findMany({
-      orderBy: {
-        name: "asc",
-      },
-      select: {
-        name: true,
-        owner: {
-          select: {
-            email: true,
-            phone: true,
+      // Fetch all businesses with their owner information
+      const businesses = await prisma.business.findMany({
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          name: true,
+          owner: {
+            select: {
+              email: true,
+              phone: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (businesses.length === 0) {
-      await bot.sendMessage(CHAT_ID, "No businesses found");
-      return;
+      if (businesses.length === 0) {
+        await bot.sendMessage(CHAT_ID, "No businesses found");
+        return;
+      }
+
+      // Format the business list
+      // const businessList = businesses.map((business) => {
+      //   const phone = business.owner.phone
+      //     ? `\nPhone: ${business.owner.phone}`
+      //     : "";
+      //   return `🏢 <b>${business.name}</b>\nEmail: ${business.owner.email}${phone}`;
+      // });
+
+      // Send the formatted message
+      // await bot.sendMessage(CHAT_ID, businessList.join("\n\n"), {
+      //   parse_mode: "HTML",
+      // });
+    } catch (error) {
+      console.error("Error fetching businesses:", error);
+      await bot.sendMessage(CHAT_ID, "Failed to fetch businesses");
     }
-
-    // Format the business list
-    // const businessList = businesses.map((business) => {
-    //   const phone = business.owner.phone
-    //     ? `\nPhone: ${business.owner.phone}`
-    //     : "";
-    //   return `🏢 <b>${business.name}</b>\nEmail: ${business.owner.email}${phone}`;
-    // });
-
-    // Send the formatted message
-    // await bot.sendMessage(CHAT_ID, businessList.join("\n\n"), {
-    //   parse_mode: "HTML",
-    // });
-  } catch (error) {
-    console.error("Error fetching businesses:", error);
-    await bot.sendMessage(CHAT_ID, "Failed to fetch businesses");
-  }
-});
+  });
+}
 
 /**
  * Sends an error message to Telegram asynchronously
@@ -103,6 +105,10 @@ export function sendTelegramError(
 
   if (!CHAT_ID) {
     console.error("TELEGRAM_CHAT_ID is not set");
+    return;
+  }
+  if (!bot) {
+    console.error("TELEGRAM_BOT_TOKEN is not set");
     return;
   }
 
