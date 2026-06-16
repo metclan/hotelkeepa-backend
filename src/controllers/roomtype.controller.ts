@@ -81,7 +81,6 @@ export const createRoomType = async (req: Request, res: Response) => {
     });
     res.status(200).json({ message: "Created room type successfully" });
   } catch (error) {
-    console.log(error);
     sendTelegramError(
       error instanceof Error ? error : new Error(String(error)),
       {
@@ -132,6 +131,7 @@ export const fetchRoomTypes = async (req: Request, res: Response) => {
           maxAdults: true,
           maxChildren: true,
           maxOccupancy: true,
+          description: true,
         },
         skip,
         take: limit,
@@ -148,5 +148,135 @@ export const fetchRoomTypes = async (req: Request, res: Response) => {
         totalPages: Math.ceil(total / limit),
       },
     });
-  } catch (err) {}
+  } catch (error) {
+    sendTelegramError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        endpoint: "/api/v1/room-types",
+        method: "GET",
+      },
+    );
+    res.status(500).json({
+      message: "Failed to create room type",
+    });
+  }
+};
+export const fetchRoomTypeById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ messgae: "Unauthorized" });
+      return;
+    }
+    if (!id) {
+      res.status(400).json({ message: "Room type ID not found" });
+      return;
+    }
+    const roomType = await prisma.roomType.findUnique({
+      where: {
+        id: id.toString(),
+      },
+      select: {
+        id: true,
+        name: true,
+        pricePerNight: true,
+        maxAdults: true,
+        maxChildren: true,
+        maxOccupancy: true,
+        description: true,
+      },
+    });
+    if (!roomType) {
+      res.status(400).json({ message: "Room not found" });
+      return;
+    }
+    res.status(200).json(roomType);
+  } catch (error) {
+    sendTelegramError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        endpoint: `/api/v1/room-types/${id}`,
+        method: "GET",
+      },
+    );
+    res.status(500).json({
+      message: "Failed to fetch room type",
+    });
+  }
+};
+export const editRoomType = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ messgae: "Unauthorized" });
+      return;
+    }
+    if (!id) {
+      res.status(400).json({ message: "Room type ID not found" });
+      return;
+    }
+    const result = roomTypeSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        message: "Validation failed",
+        errors: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+      return;
+    }
+    const {
+      name,
+      pricePerNight,
+      description,
+      maxAdults,
+      maxChildren,
+      maxOccupancy,
+    } = result.data;
+    const roomType = await prisma.roomType.findUnique({
+      where: {
+        id: id.toString(),
+      },
+      select: {
+        id: true,
+        name: true,
+        pricePerNight: true,
+        maxAdults: true,
+        maxChildren: true,
+        maxOccupancy: true,
+      },
+    });
+    if (!roomType) {
+      res.status(400).json({ message: "Room not found" });
+      return;
+    }
+    await prisma.roomType.update({
+      where: {
+        id: id.toString(),
+      },
+      data: {
+        name,
+        pricePerNight,
+        description,
+        maxAdults,
+        maxChildren,
+        maxOccupancy,
+      },
+    });
+    res.status(200).json({ message: "Room type updated successfully" });
+  } catch (error) {
+    sendTelegramError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        endpoint: `/api/v1/room-types/${id}`,
+        method: "PUT",
+      },
+    );
+    res.status(500).json({
+      message: "Failed to update room type",
+    });
+  }
 };

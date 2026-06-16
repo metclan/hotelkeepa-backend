@@ -82,7 +82,6 @@ export const createRoom = async (req: Request, res: Response) => {
     });
   }
 };
-
 export const fetchRooms = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -145,6 +144,113 @@ export const fetchRooms = async (req: Request, res: Response) => {
       {
         endpoint: "/api/v1/rooms",
         method: "GET",
+        requestQuery: req.query,
+      },
+    );
+    res.status(500).json({
+      message: "Failed to fetch room",
+    });
+  }
+};
+export const fetchRoomById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ messgae: "Unauthorized" });
+      return;
+    }
+    if (!id) {
+      res.status(400).json({ message: "Room ID not found" });
+      return;
+    }
+    const room = await prisma.room.findUnique({
+      where: {
+        id: id.toString(),
+      },
+      select: {
+        roomNumber: true,
+        roomTypeId: true,
+        floor: true,
+        status: true,
+      },
+    });
+    if (!room) {
+      res.status(400).json({ message: "Room not found" });
+      return;
+    }
+    res.status(200).json(room);
+  } catch (error) {
+    sendTelegramError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        endpoint: "/api/v1/rooms",
+        method: "GET",
+        requestQuery: req.query,
+      },
+    );
+    res.status(500).json({
+      message: "Failed to fetch room",
+    });
+  }
+};
+export const editRoom = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ messgae: "Unauthorized" });
+      return;
+    }
+    if (!id) {
+      res.status(400).json({ message: "Room ID not found" });
+      return;
+    }
+    const result = roomSchema.safeParse(req.body);
+    if (!result.success) {
+      res.status(400).json({
+        message: "Validation failed",
+        errors: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+      return;
+    }
+    const { roomNumber, roomTypeId, floor, status } = result.data;
+    const room = await prisma.room.findUnique({
+      where: {
+        id: id.toString(),
+      },
+      select: {
+        roomNumber: true,
+        roomTypeId: true,
+        floor: true,
+        status: true,
+      },
+    });
+    if (!room) {
+      res.status(400).json({ message: "Room not found" });
+      return;
+    }
+    await prisma.room.update({
+      where: {
+        id: id.toString(),
+      },
+      data: {
+        roomNumber: roomNumber,
+        roomTypeId,
+        floor,
+        status,
+      },
+    });
+    res.status(200).json({ message: "Room updated successfully" });
+  } catch (error) {
+    sendTelegramError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        endpoint: `/api/v1/rooms/${id}`,
+        method: "PATCH",
         requestQuery: req.query,
       },
     );

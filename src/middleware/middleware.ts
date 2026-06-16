@@ -69,7 +69,6 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 const getUserPermissions = async (roleId: string): Promise<string[]> => {
   const cached = permissionCache.get(roleId);
-  console.log(cached);
   // return from cache if still valid
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
     return cached.permissions;

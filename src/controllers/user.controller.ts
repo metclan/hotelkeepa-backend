@@ -124,24 +124,27 @@ export const sendInvitation = async (req: Request, res: Response) => {
   }
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-  await prisma.invitation.create({
-    data: {
-      email,
+  // Send invitation
+  await prisma.$transaction(async (tx) => {
+    await tx.invitation.create({
+      data: {
+        email,
+        name,
+        token,
+        roleId,
+        locationId,
+        businessId: req.user!.businessId,
+        invitedById: req.user!.id,
+        expiresAt,
+      },
+    });
+    await sendInviteEmail({
+      to: email,
       name,
-      token,
-      roleId,
-      locationId,
-      businessId: req.user!.businessId,
-      invitedById: req.user!.id,
+      inviteUrl: `${process.env.FRONTEND_URL}/invite?token=${token}`,
+      invitedBy: req.user!.name,
       expiresAt,
-    },
-  });
-  await sendInviteEmail({
-    to: email,
-    name,
-    inviteUrl: `${process.env.FRONTEND_URL}/invite?token=${token}`,
-    invitedBy: req.user!.name,
-    expiresAt,
+    });
   });
   res.status(201).json({ message: "Invitation sent successfully" });
 };

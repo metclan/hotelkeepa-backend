@@ -127,7 +127,8 @@ model Location {
   isActive   Boolean @default(true)
   isDeleted  Boolean @default(false)
   businessId String
-
+  defaultCheckoutTime String @default("12:00") //12:00PM
+  defaultCheckinTime  String @default("12:00") //12:00PM 
 
   // Relations
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)

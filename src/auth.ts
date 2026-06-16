@@ -3,6 +3,7 @@ import { PrismaClient } from "./generated/prisma/client.js";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { createAuthMiddleware } from "better-auth/api";
 import { sendEmail } from "./lib/email.service.js";
+import { DEFAULT_ROLES } from "./lib/defaultRoles.js";
 
 const prisma = new PrismaClient();
 
@@ -46,38 +47,66 @@ export const auth = betterAuth({
       if (ctx.path !== "/sign-up/email") return;
       const newUser = ctx.context.newSession?.user;
       if (!newUser) return;
-
-      // Create a new business
-      const business = await prisma.business.create({
-        data: {
-          name: null,
-        },
-      });
-      // Create new location
-      const newLocation = await prisma.location.create({
-        data: {
-          name: null,
-          businessId: business.id,
-        },
-      });
-      // Create new admin role
-      const newRole = await prisma.role.create({
-        data: {
-          locationId: newLocation.id,
-          name: "Admin",
-          isAdmin: true,
-        },
-      });
-      // Update user role and mark as owner
-      const existingUser = await prisma.user.update({
+      const invitation = await prisma.invitation.findFirst({
         where: {
-          id: newUser.id,
+          email: newUser.email,
+          status: "pending",
         },
-        data: {
-          isOwner: true,
-          roleId: newRole.id,
-          businessId: business.id,
-        },
+      });
+      if (invitation) return;
+      await prisma.$transaction(async (tx) => {
+        // Create a new business
+        const business = await tx.business.create({
+          data: {
+            name: null,
+          },
+        });
+        // Create new location
+        const newLocation = await tx.location.create({
+          data: {
+            name: null,
+            businessId: business.id,
+          },
+        });
+        // Fetch all permissions from DB
+        const allPermissions = await tx.permission.findMany({
+          select: { id: true, code: true },
+        });
+        const getPermissionIds = (codes: string[]) =>
+          allPermissions
+            .filter((p) => codes.includes(p.code))
+            .map((p) => ({ permissionId: p.id }));
+        // Create all default roles with permissions
+        const createdRoles = await Promise.all(
+          DEFAULT_ROLES.map((role) =>
+            tx.role.create({
+              data: {
+                locationId: newLocation.id,
+                name: role.name,
+                isAdmin: role.isAdmin,
+                rolePermissions: {
+                  create: getPermissionIds(role.permissions),
+                },
+              },
+            }),
+          ),
+        );
+        const adminRole = createdRoles.find((r) => r.isAdmin === true);
+        if (!adminRole) {
+          throw new Error("Admin role could not be created");
+        }
+        // Update user role and mark as owner
+        await tx.user.update({
+          where: {
+            id: newUser.id,
+          },
+          data: {
+            isOwner: true,
+            roleId: adminRole.id,
+            businessId: business.id,
+            locationId: newLocation.id,
+          },
+        });
       });
     }),
   },
