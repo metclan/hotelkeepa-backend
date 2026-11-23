@@ -63,7 +63,7 @@ export const createRoomType = async (req: Request, res: Response) => {
       maxOccupancy,
     } = result.data;
     // Ensure no other room type has same name
-    const alreadyExists = await prisma.roomType.findFirst({ where: { name } });
+    const alreadyExists = await prisma.roomType.findFirst({ where: { name, locationId: user.locationId } });
     if (alreadyExists) {
       res.status(409).json({ message: "Room type already exists " });
       return;
@@ -176,6 +176,7 @@ export const fetchRoomTypeById = async (req: Request, res: Response) => {
     const roomType = await prisma.roomType.findUnique({
       where: {
         id: id.toString(),
+        locationId: user.locationId,
       },
       select: {
         id: true,
@@ -239,6 +240,7 @@ export const editRoomType = async (req: Request, res: Response) => {
     const roomType = await prisma.roomType.findUnique({
       where: {
         id: id.toString(),
+        locationId: user.locationId,
       },
       select: {
         id: true,
@@ -256,6 +258,7 @@ export const editRoomType = async (req: Request, res: Response) => {
     await prisma.roomType.update({
       where: {
         id: id.toString(),
+        locationId: user.locationId,
       },
       data: {
         name,

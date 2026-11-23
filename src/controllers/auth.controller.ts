@@ -9,6 +9,10 @@ export const getMe = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
         onboardingStage: true,
         isOwner: true,
         role: {
@@ -20,14 +24,18 @@ export const getMe = async (req: Request, res: Response) => {
         },
         businessLocation: {
           select: {
+            timezone: true,
+            logo: true,
             defaultCheckoutTime: true,
             defaultCheckinTime: true,
           },
         },
         business: {
           select: {
+            country: { select: { name: true } },
             currency: {
               select: {
+                name: true,
                 code: true,
                 symbol: true,
               },
@@ -36,10 +44,15 @@ export const getMe = async (req: Request, res: Response) => {
         },
       },
     });
-    res.json({
-      ...user,
-      permissions: req.permissions ?? [],
-    });
+    const [businessLocation, role] = await Promise.all([
+      prisma.location.findUnique({ where: { id: req.user!.locationId ?? "" }, select: {
+        id: true, name: true, address: true, city: true, state: true, timezone: true, logo: true,
+        defaultCheckoutTime: true, defaultCheckinTime: true,
+      } }),
+      req.user!.roleId ? prisma.role.findFirst({ where: { id: req.user!.roleId, locationId: req.user!.locationId }, select: { id: true, name: true, isAdmin: true } }) : null,
+    ]);
+    res.json({ ...user, locationId: businessLocation?.id ?? null, businessLocation, role,
+      allDepartments: req.allDepartments ?? false, permissions: req.permissions ?? [] });
   } catch (error) {
     sendTelegramError(
       error instanceof Error ? error : new Error(String(error)),

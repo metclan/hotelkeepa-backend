@@ -34,6 +34,8 @@ model User {
   role  Role? @relation(fields: [roleId], references: [id])
   businessLocation Location? @relation(fields: [locationId], references: [id])
   business         Business? @relation(fields: [businessId], references: [id])
+  locationAccess UserLocation[]
+  departmentAccess UserDepartment[]
   reservations     Reservation[]
   sessions      Session[]
   accounts      Account[]
@@ -54,6 +56,7 @@ model Business {
   subscriptions Subscription[]
   subscriptinoPayments SubscriptionPayment[]
   users         User[]
+  customers     Customer[]
   currency               Currency?                 @relation(fields: [currencyId], references: [id])
   country                Country?                @relation(fields: [countryId], references: [id])
 
@@ -71,6 +74,9 @@ model Role {
   rolePermissions  RolePermission[]
   users       User[]
   invitations Invitation[]
+  locationMemberships UserLocation[]
+
+  @@unique([id, locationId])
 
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -127,6 +133,18 @@ model Location {
   isActive   Boolean @default(true)
   isDeleted  Boolean @default(false)
   businessId String
+  timezone String @default("Africa/Lagos")
+  // Public R2 URL; image bytes are never persisted here.
+  logo String? @db.MediumText
+  logoKey String? @db.VarChar(1024)
+  setupPreset HotelSetupPreset @default(reservations_only)
+  departments Department[]
+  diningTables DiningTable[]
+  productCategories ProductCategory[]
+  productUnits ProductUnit[]
+  products Product[]
+  userAccess UserLocation[]
+  activeSessions Session[]
   defaultCheckoutTime String @default("12:00") //12:00PM
   defaultCheckinTime  String @default("12:00") //12:00PM 
 
@@ -162,6 +180,7 @@ model CustomLabels {
   updatedAt          DateTime            @default(now()) @updatedAt
 
   paymentMethods    PaymentMethodEntry[]
+  posOrderPayments PosOrderPayment[]
 }
 enum CustomLabelType {
   payment
@@ -208,6 +227,7 @@ model Customer {
   phone     String
   email     String?
   locationId  String
+  businessId String
   address   String? 
   gender    Gender? 
   idType    String? 
@@ -215,11 +235,13 @@ model Customer {
   nationality String? 
   occupation  String? 
   dateOfBirth DateTime?
+  isWalking  Boolean @default(false)
   isActive    Boolean @default(true)
   isDeleted   Boolean @default(false)
 
   // Relationships
   location  Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   reservations  Reservation[]
 
   createdAt     DateTime       @default(now())
@@ -384,6 +406,8 @@ model Session {
   updatedAt DateTime @updatedAt
   ipAddress String?  @db.Text
   userAgent String?  @db.Text
+  activeLocationId String?
+  activeLocation Location? @relation(fields: [activeLocationId], references: [id], onDelete: SetNull)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -520,4 +544,277 @@ enum PaymentStatus {
   paid
   partially_paid
   due
+}
+
+// Presets only seed onboarding; departments remain independently configurable.
+enum HotelSetupPreset {
+  reservations_only
+  reservations_bar
+  full_service
+}
+
+enum DepartmentAccessRole {
+  staff
+  manager
+}
+
+// User.locationId is the default hotel. Session.activeLocationId overrides it per session.
+model UserLocation {
+  userId String
+  locationId String
+  isActive Boolean @default(true)
+  // False means this member is restricted to explicit UserDepartment assignments.
+  allDepartments Boolean @default(false)
+  roleId String?
+  role Role? @relation(fields: [roleId, locationId], references: [id, locationId], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  departments UserDepartment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, locationId])
+  @@index([locationId])
+}
+
+model Department {
+  id String @id @default(uuid())
+  locationId String
+  name String
+  holdsInventory Boolean @default(false)
+  canSell Boolean @default(false)
+  managesTables Boolean @default(false)
+  kitchenOrders Boolean @default(false)
+  isActive Boolean @default(true)
+  disabledAt DateTime?
+  invoiceHeading String?
+  invoicePrefix String?
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  users UserDepartment[]
+  tables DiningTable[]
+  productInventory ProductInventory[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, name])
+  @@unique([id, locationId])
+  @@index([locationId, isActive])
+}
+
+model DiningTable {
+  id String @id @default(uuid())
+  locationId String
+  departmentId String
+  name String
+  isActive Boolean @default(true)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  department Department @relation(fields: [departmentId, locationId], references: [id, locationId], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([departmentId, name])
+  @@index([locationId, isActive])
+  @@index([departmentId, isActive])
+}
+
+model ProductCategory {
+  id String @id @default(uuid())
+  locationId String
+  name String
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  products Product[]
+  @@unique([locationId, name])
+  @@unique([id, locationId])
+}
+
+model ProductUnit {
+  id String @id @default(uuid())
+  locationId String
+  name String
+  symbol String @db.VarChar(30)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  products Product[]
+  @@unique([locationId, name])
+  @@unique([id, locationId])
+}
+
+model Product {
+  id String @id @default(uuid())
+  locationId String
+  businessId String
+  disabledAt DateTime?
+  archivedSku String?
+  name String
+  sku String?
+  categoryId String?
+  unitId String
+  costPrice Decimal @db.Decimal(14, 2)
+  reorderQuantity Decimal @db.Decimal(14, 3)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  category ProductCategory? @relation(fields: [categoryId, locationId], references: [id, locationId], onDelete: Restrict)
+  unit ProductUnit @relation(fields: [unitId, locationId], references: [id, locationId], onDelete: Restrict)
+  inventory ProductInventory[]
+  images ProductImage[]
+  @@unique([businessId, sku])
+  @@unique([id, locationId])
+  @@index([locationId, disabledAt])
+}
+
+model ProductInventory {
+  productId String
+  departmentId String
+  locationId String
+  costPrice Decimal @db.Decimal(14, 2)
+  sellingPrice Decimal? @db.Decimal(14, 2)
+  quantity Decimal @db.Decimal(14, 3)
+  batches StockBatch[]
+  adjustments ProductStockAdjustment[]
+  stockDate DateTime @db.Date
+  expiryDate DateTime? @db.Date
+  product Product @relation(fields: [productId, locationId], references: [id, locationId], onDelete: Cascade)
+  department Department @relation(fields: [departmentId, locationId], references: [id, locationId], onDelete: Restrict)
+  @@id([productId, departmentId])
+}
+
+model ProductImage {
+  id String @id @default(uuid())
+  productId String
+  key String @db.VarChar(1024)
+  url String @db.Text
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+}
+
+model StockBatch {
+  id String @id @default(uuid())
+  productId String
+  departmentId String
+  quantity Decimal @db.Decimal(14, 3)
+  quantityLeft Decimal @db.Decimal(14, 3)
+  costPrice Decimal @db.Decimal(14, 2)
+  stockDate DateTime @db.Date
+  expiryDate DateTime? @db.Date
+  inventory ProductInventory @relation(fields: [productId, departmentId], references: [productId, departmentId], onDelete: Restrict)
+  movements StockMovement[]
+  @@index([productId, departmentId, stockDate])
+}
+
+model StockMovement {
+  id String @id @default(uuid())
+  stockBatchId String
+  batch StockBatch @relation(fields: [stockBatchId], references: [id], onDelete: Restrict)
+  type StockMovementType
+  quantity Decimal @db.Decimal(14, 3)
+  unitCost Decimal @db.Decimal(14, 2)
+  referenceId String
+  reason String
+  userId String?
+  effectiveDate DateTime @db.Date
+  createdAt DateTime @default(now())
+  @@index([referenceId])
+}
+
+enum StockMovementType {
+  opening
+  adjustment
+  transfer
+  purchase
+  sale
+  adjustment_edited
+  adjustment_deleted
+}
+
+model ProductStockAdjustment {
+  id String @id @default(uuid())
+  memoId String
+  memo StockAdjustmentMemo @relation(fields: [memoId], references: [id], onDelete: Restrict)
+  productId String
+  departmentId String
+  inventory ProductInventory @relation(fields: [productId, departmentId], references: [productId, departmentId], onDelete: Restrict)
+  previousQuantity Decimal @db.Decimal(14, 3)
+  newQuantity Decimal @db.Decimal(14, 3)
+  reason String
+  userId String
+  createdAt DateTime @default(now())
+  @@index([productId, departmentId, createdAt])
+}
+
+model StockAdjustmentMemo {
+  id String @id @default(uuid())
+  memoNumber String
+  deletedAt DateTime?
+  effectiveDate DateTime @db.Date
+  note String? @db.Text
+  lines ProductStockAdjustment[]
+}
+
+model PosRegister {
+  id String @id @default(uuid())
+  number Int @unique @default(autoincrement())
+  locationId String
+  userId String
+  activeKey String? @unique
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+  orders PosOrder[]
+}
+
+model PosOrder {
+  id String @id @default(uuid())
+  registerId String
+  register PosRegister @relation(fields: [registerId], references: [id], onDelete: Restrict)
+  departmentId String
+  tableId String?
+  activeTableId String? @unique
+  status PosOrderStatus
+  receiptNumber String?
+  paymentMethodId String?
+  changeDue Decimal @default(0) @db.Decimal(14, 2)
+  customerId String?
+  customerName String?
+  items Json
+  total Decimal @db.Decimal(14, 2)
+  kitchenVersion Int @default(0)
+  version Int @default(1)
+  kitchenItems Json?
+  paymentEntries PosOrderPayment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([departmentId, status, updatedAt])
+}
+
+enum PosOrderStatus {
+  held
+  paid
+  cancelled
+}
+
+model PosOrderPayment {
+  id String @id @default(uuid())
+  orderId String
+  paymentMethodId String
+  amountReceived Decimal @db.Decimal(14, 2)
+  amountApplied Decimal @db.Decimal(14, 2)
+  order PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentMethod CustomLabels @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  @@unique([orderId, paymentMethodId])
+  @@index([paymentMethodId])
+}
+
+model UserDepartment {
+  userId String
+  locationId String
+  departmentId String
+  role DepartmentAccessRole @default(staff)
+  isActive Boolean @default(true)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Composite relations prevent assigning a department from another hotel.
+  membership UserLocation @relation(fields: [userId, locationId], references: [userId, locationId], onDelete: Cascade)
+  department Department @relation(fields: [departmentId, locationId], references: [id, locationId], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, departmentId])
+  @@index([userId, locationId])
+  @@index([departmentId, locationId])
 }

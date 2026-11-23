@@ -1,6 +1,8 @@
+import { requirePermission } from "../../middleware/middleware.js";
 import {
   createBooking,
   fetchReservations,
+  fetchReservationCalendar,
   fetchReservationById,
   fetchReservationPayment,
   deleteReservation,
@@ -11,13 +13,14 @@ import {
 import { Router } from "express";
 
 const router = Router();
-router.get("/", fetchReservations);
-router.get("/:reservationId/payment", fetchReservationPayment);
-router.get("/:reservationId/print", printBookingReceipt);
-router.post("/:reservationLineId/check-in", checkIn);
-router.post("/:reservationLineId/check-out", checkOut);
-router.get("/:reservationId", fetchReservationById);
-router.delete("/:reservationId", deleteReservation);
-router.post("/", createBooking);
+router.get("/", requirePermission("bookings:view"), fetchReservations);
+router.get("/calendar", requirePermission("bookings:view"), fetchReservationCalendar);
+router.get("/:reservationId/payment", requirePermission("bookings:view"), fetchReservationPayment);
+router.get("/:reservationId/print", requirePermission("bookings:print"), printBookingReceipt);
+router.post("/:reservationLineId/check-in", requirePermission("bookings:edit"), checkIn);
+router.post("/:reservationLineId/check-out", requirePermission("bookings:edit"), checkOut);
+router.get("/:reservationId", requirePermission("bookings:view"), fetchReservationById);
+router.delete("/:reservationId", requirePermission("bookings:delete"), deleteReservation);
+router.post("/", requirePermission("bookings:create"), createBooking);
 
 export { router as reservationRouter };

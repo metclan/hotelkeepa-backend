@@ -9,17 +9,17 @@ import {
   resendInvitation,
   modifyUserRole,
 } from "../../controllers/user.controller.js";
-import { requireAuth, requireOwner } from "../../middleware/middleware.js";
+import { requireAuth, requireOwner, loadPermissions, requirePermission } from "../../middleware/middleware.js";
 
 const router = Router();
 
 router.post("/accept", acceptInvitation);
 router.get("/validate", validateInvitation);
-router.get("/invitations", requireAuth, fetchInvitations);
-router.patch("/invitations/:id/revoke", requireAuth, revokeInvitation);
-router.post("/invitations/:id/resend", requireAuth, resendInvitation);
+router.get("/invitations", requireAuth, loadPermissions, requirePermission("users:view"), fetchInvitations);
+router.patch("/invitations/:id/revoke", requireAuth, requireOwner, revokeInvitation);
+router.post("/invitations/:id/resend", requireAuth, requireOwner, resendInvitation);
 router.post("/invite", requireAuth, requireOwner, sendInvitation);
-router.get("/", requireAuth, fetchUsers);
-router.patch("/:id/modify-role", requireAuth, modifyUserRole);
+router.get("/", requireAuth, loadPermissions, requirePermission("users:view"), fetchUsers);
+router.patch("/:id/modify-role", requireAuth, loadPermissions, requirePermission("users:modify"), modifyUserRole);
 
 export { router as userRouter };

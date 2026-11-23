@@ -7,11 +7,13 @@ import {
   deleteRole,
 } from "../../controllers/role.controller.js";
 
+import { requirePermission } from "../../middleware/middleware.js";
+
 const router = Router();
 router.get("/", fetchRoles);
-router.post("/", createRole);
-router.patch("/:id", updateRole);
+router.post("/", requirePermission("roles:create"), createRole);
+router.patch("/:id", requirePermission("roles:edit"), updateRole);
 router.get("/:id", fetchRoleById);
-router.delete("/:id", deleteRole);
+router.delete("/:id", requirePermission("roles:delete"), deleteRole);
 
 export { router as roleRouter };

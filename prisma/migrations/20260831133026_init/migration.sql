@@ -94,6 +94,8 @@ CREATE TABLE `Location` (
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `isDeleted` BOOLEAN NOT NULL DEFAULT false,
     `businessId` VARCHAR(191) NOT NULL,
+    `defaultCheckoutTime` VARCHAR(191) NOT NULL DEFAULT '12:00',
+    `defaultCheckinTime` VARCHAR(191) NOT NULL DEFAULT '12:00',
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -153,6 +155,7 @@ CREATE TABLE `Customer` (
     `phone` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NULL,
     `locationId` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
     `address` VARCHAR(191) NULL,
     `gender` ENUM('male', 'female', 'other') NULL,
     `idType` VARCHAR(191) NULL,
@@ -160,6 +163,7 @@ CREATE TABLE `Customer` (
     `nationality` VARCHAR(191) NULL,
     `occupation` VARCHAR(191) NULL,
     `dateOfBirth` DATETIME(3) NULL,
+    `isWalking` BOOLEAN NOT NULL DEFAULT false,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `isDeleted` BOOLEAN NOT NULL DEFAULT false,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -446,6 +450,9 @@ ALTER TABLE `RoomType` ADD CONSTRAINT `RoomType_locationId_fkey` FOREIGN KEY (`l
 
 -- AddForeignKey
 ALTER TABLE `Customer` ADD CONSTRAINT `Customer_locationId_fkey` FOREIGN KEY (`locationId`) REFERENCES `Location`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Customer` ADD CONSTRAINT `Customer_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Reservation` ADD CONSTRAINT `Reservation_locationId_fkey` FOREIGN KEY (`locationId`) REFERENCES `Location`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

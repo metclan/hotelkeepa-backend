@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>{{receiptTitle}} · {{receiptNumber}}</title>
+    <style>
+      * { box-sizing: border-box; }
+      @page { size: 80mm auto; margin: 0; }
+      body { width: 80mm; margin: 0; padding: 0; background: #fff; color: #000; font: 600 12px/1.35 "Courier New", monospace; -webkit-font-smoothing: none; text-rendering: geometricPrecision; }
+      .receipt { width: 80mm; padding: 4mm; }
+      .center { text-align: center; }
+      .bold { font-weight: 800; }
+      .line { border-top: 2px dashed #000; margin: 8px 0; }
+      .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; }
+      .label { flex: 1; }
+      .value { flex: 1; text-align: right; overflow-wrap: anywhere; }
+      .hotel-name { font-size: 16px; font-weight: 900; text-transform: uppercase; }
+      .title { margin-top: 8px; font-size: 14px; font-weight: 900; }
+      .items-head, .item { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 5px; margin: 4px 0; }
+      .items-head { border-bottom: 1px solid #000; padding-bottom: 3px; font-weight: 900; }
+      .right { text-align: right; }
+      .footer { margin-top: 10px; text-align: center; font-weight: 900; }
+      .no-print { margin: 12px 4mm; border: 2px solid #000; background: #000; color: #fff; font: 700 14px Arial, sans-serif; padding: 8px 12px; cursor: pointer; }
+      @media print { body { width: 80mm; font-weight: 700; print-color-adjust: exact; -webkit-print-color-adjust: exact; } .receipt { width: 80mm; padding: 3mm; } .no-print { display: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="receipt">
+      <div class="center"><div class="hotel-name">{{companyName}}</div><div>{{companyAddress}}</div><div>{{companyPhone}}</div></div>
+      <div class="line"></div>
+      <div class="center title">{{receiptTitle}}</div>
+      <div class="line"></div>
+      <div class="row"><div class="label">Receipt</div><div class="value">{{receiptNumber}}</div></div>
+      <div class="row"><div class="label">Date</div><div class="value">{{receiptDate}}</div></div>
+      <div class="row"><div class="label">Served by</div><div class="value">{{cashier}}</div></div>
+      <div class="row"><div class="label">Department</div><div class="value">{{department}}</div></div>
+      <div class="row"><div class="label">Table</div><div class="value">{{table}}</div></div>
+      <div class="row"><div class="label">Customer</div><div class="value">{{customer}}</div></div>
+      <div class="line"></div>
+      <div class="items-head"><div>ITEM</div><div class="right">QTY</div><div class="right">AMOUNT</div></div>
+      {{#each items}}<div class="item"><div>{{name}}<br />{{unitPrice}} each</div><div class="right">{{quantity}}</div><div class="right">{{lineTotal}}</div></div>{{/each}}
+      <div class="line"></div>
+      <div class="row bold"><div class="label">Total</div><div class="value">{{total}}</div></div>
+      {{#each payments}}<div class="row"><div class="label">{{method}}</div><div class="value">{{amountApplied}}</div></div>{{/each}}
+      <div class="row"><div class="label">Amount tendered</div><div class="value">{{amountTendered}}</div></div>
+      <div class="row"><div class="label">Change returned</div><div class="value">{{changeDue}}</div></div>
+      <div class="row bold"><div class="label">Balance due</div><div class="value">{{balanceDue}}</div></div>
+      <div class="line"></div>
+      <div class="footer">{{footerMessage}}</div>
+    </div>
+    <button class="no-print" onclick="window.print()">Print Receipt</button>
+  </body>
+</html>

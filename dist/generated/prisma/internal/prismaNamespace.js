@@ -92,7 +92,23 @@ export const ModelName = {
     Verification: 'Verification',
     Country: 'Country',
     Currency: 'Currency',
-    Invitation: 'Invitation'
+    Invitation: 'Invitation',
+    UserLocation: 'UserLocation',
+    Department: 'Department',
+    DiningTable: 'DiningTable',
+    ProductCategory: 'ProductCategory',
+    ProductUnit: 'ProductUnit',
+    Product: 'Product',
+    ProductInventory: 'ProductInventory',
+    ProductImage: 'ProductImage',
+    StockBatch: 'StockBatch',
+    StockMovement: 'StockMovement',
+    ProductStockAdjustment: 'ProductStockAdjustment',
+    StockAdjustmentMemo: 'StockAdjustmentMemo',
+    PosRegister: 'PosRegister',
+    PosOrder: 'PosOrder',
+    PosOrderPayment: 'PosOrderPayment',
+    UserDepartment: 'UserDepartment'
 };
 /**
  * Enums
@@ -170,6 +186,12 @@ export const LocationScalarFieldEnum = {
     isActive: 'isActive',
     isDeleted: 'isDeleted',
     businessId: 'businessId',
+    timezone: 'timezone',
+    logo: 'logo',
+    logoKey: 'logoKey',
+    setupPreset: 'setupPreset',
+    defaultCheckoutTime: 'defaultCheckoutTime',
+    defaultCheckinTime: 'defaultCheckinTime',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -211,6 +233,7 @@ export const CustomerScalarFieldEnum = {
     phone: 'phone',
     email: 'email',
     locationId: 'locationId',
+    businessId: 'businessId',
     address: 'address',
     gender: 'gender',
     idType: 'idType',
@@ -218,6 +241,7 @@ export const CustomerScalarFieldEnum = {
     nationality: 'nationality',
     occupation: 'occupation',
     dateOfBirth: 'dateOfBirth',
+    isWalking: 'isWalking',
     isActive: 'isActive',
     isDeleted: 'isDeleted',
     createdAt: 'createdAt',
@@ -327,6 +351,7 @@ export const SessionScalarFieldEnum = {
     updatedAt: 'updatedAt',
     ipAddress: 'ipAddress',
     userAgent: 'userAgent',
+    activeLocationId: 'activeLocationId',
     userId: 'userId'
 };
 export const AccountScalarFieldEnum = {
@@ -385,9 +410,175 @@ export const InvitationScalarFieldEnum = {
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
+export const UserLocationScalarFieldEnum = {
+    userId: 'userId',
+    locationId: 'locationId',
+    isActive: 'isActive',
+    allDepartments: 'allDepartments',
+    roleId: 'roleId',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+export const DepartmentScalarFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name',
+    holdsInventory: 'holdsInventory',
+    canSell: 'canSell',
+    managesTables: 'managesTables',
+    kitchenOrders: 'kitchenOrders',
+    isActive: 'isActive',
+    disabledAt: 'disabledAt',
+    invoiceHeading: 'invoiceHeading',
+    invoicePrefix: 'invoicePrefix',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+export const DiningTableScalarFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    departmentId: 'departmentId',
+    name: 'name',
+    isActive: 'isActive',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+export const ProductCategoryScalarFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name'
+};
+export const ProductUnitScalarFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name',
+    symbol: 'symbol'
+};
+export const ProductScalarFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    businessId: 'businessId',
+    disabledAt: 'disabledAt',
+    archivedSku: 'archivedSku',
+    name: 'name',
+    sku: 'sku',
+    categoryId: 'categoryId',
+    unitId: 'unitId',
+    costPrice: 'costPrice',
+    reorderQuantity: 'reorderQuantity'
+};
+export const ProductInventoryScalarFieldEnum = {
+    productId: 'productId',
+    departmentId: 'departmentId',
+    locationId: 'locationId',
+    costPrice: 'costPrice',
+    sellingPrice: 'sellingPrice',
+    quantity: 'quantity',
+    stockDate: 'stockDate',
+    expiryDate: 'expiryDate'
+};
+export const ProductImageScalarFieldEnum = {
+    id: 'id',
+    productId: 'productId',
+    key: 'key',
+    url: 'url',
+    createdAt: 'createdAt'
+};
+export const StockBatchScalarFieldEnum = {
+    id: 'id',
+    productId: 'productId',
+    departmentId: 'departmentId',
+    quantity: 'quantity',
+    quantityLeft: 'quantityLeft',
+    costPrice: 'costPrice',
+    stockDate: 'stockDate',
+    expiryDate: 'expiryDate'
+};
+export const StockMovementScalarFieldEnum = {
+    id: 'id',
+    stockBatchId: 'stockBatchId',
+    type: 'type',
+    quantity: 'quantity',
+    unitCost: 'unitCost',
+    referenceId: 'referenceId',
+    reason: 'reason',
+    userId: 'userId',
+    effectiveDate: 'effectiveDate',
+    createdAt: 'createdAt'
+};
+export const ProductStockAdjustmentScalarFieldEnum = {
+    id: 'id',
+    memoId: 'memoId',
+    productId: 'productId',
+    departmentId: 'departmentId',
+    previousQuantity: 'previousQuantity',
+    newQuantity: 'newQuantity',
+    reason: 'reason',
+    userId: 'userId',
+    createdAt: 'createdAt'
+};
+export const StockAdjustmentMemoScalarFieldEnum = {
+    id: 'id',
+    memoNumber: 'memoNumber',
+    deletedAt: 'deletedAt',
+    effectiveDate: 'effectiveDate',
+    note: 'note'
+};
+export const PosRegisterScalarFieldEnum = {
+    id: 'id',
+    number: 'number',
+    locationId: 'locationId',
+    userId: 'userId',
+    activeKey: 'activeKey',
+    openedAt: 'openedAt',
+    closedAt: 'closedAt'
+};
+export const PosOrderScalarFieldEnum = {
+    id: 'id',
+    registerId: 'registerId',
+    departmentId: 'departmentId',
+    tableId: 'tableId',
+    activeTableId: 'activeTableId',
+    status: 'status',
+    receiptNumber: 'receiptNumber',
+    paymentMethodId: 'paymentMethodId',
+    changeDue: 'changeDue',
+    customerId: 'customerId',
+    customerName: 'customerName',
+    items: 'items',
+    total: 'total',
+    kitchenVersion: 'kitchenVersion',
+    version: 'version',
+    kitchenItems: 'kitchenItems',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+export const PosOrderPaymentScalarFieldEnum = {
+    id: 'id',
+    orderId: 'orderId',
+    paymentMethodId: 'paymentMethodId',
+    amountReceived: 'amountReceived',
+    amountApplied: 'amountApplied'
+};
+export const UserDepartmentScalarFieldEnum = {
+    userId: 'userId',
+    locationId: 'locationId',
+    departmentId: 'departmentId',
+    role: 'role',
+    isActive: 'isActive',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
 export const SortOrder = {
     asc: 'asc',
     desc: 'desc'
+};
+export const JsonNullValueInput = {
+    JsonNull: JsonNull
+};
+export const NullableJsonNullValueInput = {
+    DbNull: DbNull,
+    JsonNull: JsonNull
 };
 export const NullsOrder = {
     first: 'first',
@@ -440,7 +631,12 @@ export const LocationOrderByRelevanceFieldEnum = {
     zip: 'zip',
     phone: 'phone',
     email: 'email',
-    businessId: 'businessId'
+    businessId: 'businessId',
+    timezone: 'timezone',
+    logo: 'logo',
+    logoKey: 'logoKey',
+    defaultCheckoutTime: 'defaultCheckoutTime',
+    defaultCheckinTime: 'defaultCheckinTime'
 };
 export const CustomLabelsOrderByRelevanceFieldEnum = {
     id: 'id',
@@ -467,6 +663,7 @@ export const CustomerOrderByRelevanceFieldEnum = {
     phone: 'phone',
     email: 'email',
     locationId: 'locationId',
+    businessId: 'businessId',
     address: 'address',
     idType: 'idType',
     idNumber: 'idNumber',
@@ -531,6 +728,7 @@ export const SessionOrderByRelevanceFieldEnum = {
     token: 'token',
     ipAddress: 'ipAddress',
     userAgent: 'userAgent',
+    activeLocationId: 'activeLocationId',
     userId: 'userId'
 };
 export const AccountOrderByRelevanceFieldEnum = {
@@ -572,5 +770,116 @@ export const InvitationOrderByRelevanceFieldEnum = {
     locationId: 'locationId',
     businessId: 'businessId',
     invitedById: 'invitedById'
+};
+export const UserLocationOrderByRelevanceFieldEnum = {
+    userId: 'userId',
+    locationId: 'locationId',
+    roleId: 'roleId'
+};
+export const DepartmentOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name',
+    invoiceHeading: 'invoiceHeading',
+    invoicePrefix: 'invoicePrefix'
+};
+export const DiningTableOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    departmentId: 'departmentId',
+    name: 'name'
+};
+export const ProductCategoryOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name'
+};
+export const ProductUnitOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    name: 'name',
+    symbol: 'symbol'
+};
+export const ProductOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    businessId: 'businessId',
+    archivedSku: 'archivedSku',
+    name: 'name',
+    sku: 'sku',
+    categoryId: 'categoryId',
+    unitId: 'unitId'
+};
+export const ProductInventoryOrderByRelevanceFieldEnum = {
+    productId: 'productId',
+    departmentId: 'departmentId',
+    locationId: 'locationId'
+};
+export const ProductImageOrderByRelevanceFieldEnum = {
+    id: 'id',
+    productId: 'productId',
+    key: 'key',
+    url: 'url'
+};
+export const StockBatchOrderByRelevanceFieldEnum = {
+    id: 'id',
+    productId: 'productId',
+    departmentId: 'departmentId'
+};
+export const StockMovementOrderByRelevanceFieldEnum = {
+    id: 'id',
+    stockBatchId: 'stockBatchId',
+    referenceId: 'referenceId',
+    reason: 'reason',
+    userId: 'userId'
+};
+export const ProductStockAdjustmentOrderByRelevanceFieldEnum = {
+    id: 'id',
+    memoId: 'memoId',
+    productId: 'productId',
+    departmentId: 'departmentId',
+    reason: 'reason',
+    userId: 'userId'
+};
+export const StockAdjustmentMemoOrderByRelevanceFieldEnum = {
+    id: 'id',
+    memoNumber: 'memoNumber',
+    note: 'note'
+};
+export const PosRegisterOrderByRelevanceFieldEnum = {
+    id: 'id',
+    locationId: 'locationId',
+    userId: 'userId',
+    activeKey: 'activeKey'
+};
+export const JsonNullValueFilter = {
+    DbNull: DbNull,
+    JsonNull: JsonNull,
+    AnyNull: AnyNull
+};
+export const QueryMode = {
+    default: 'default',
+    insensitive: 'insensitive'
+};
+export const PosOrderOrderByRelevanceFieldEnum = {
+    id: 'id',
+    registerId: 'registerId',
+    departmentId: 'departmentId',
+    tableId: 'tableId',
+    activeTableId: 'activeTableId',
+    receiptNumber: 'receiptNumber',
+    paymentMethodId: 'paymentMethodId',
+    customerId: 'customerId',
+    customerName: 'customerName'
+};
+export const PosOrderPaymentOrderByRelevanceFieldEnum = {
+    id: 'id',
+    orderId: 'orderId',
+    paymentMethodId: 'paymentMethodId'
+};
+export const UserDepartmentOrderByRelevanceFieldEnum = {
+    userId: 'userId',
+    locationId: 'locationId',
+    departmentId: 'departmentId'
 };
 export const defineExtension = runtime.Extensions.defineExtension;

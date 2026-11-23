@@ -2,7 +2,9 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import { Request, Response } from "express";
-import { PrismaClient } from "../generated/prisma/client.js";
+import { PrismaClient, type Prisma } from "../generated/prisma/client.js";
+import { PaymentStatus, ReservationRoomStatus } from "../generated/prisma/enums.js";
+import { hotelDayRange } from "../utils/hotel-day-range.js";
 import { sendTelegramError } from "../utils/telegram.js";
 import { generatesIds } from "../utils/generateIds.js";
 import { formatPaymentMethod } from "../utils/payment-format.js";
@@ -121,7 +123,10 @@ const reservationPaginationSchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? parseInt(val) : 1)),
-  search: z.string().optional(),
+  search: z.string().trim().optional(),
+  status: z.enum(ReservationRoomStatus).optional(),
+  paymentStatus: z.enum(PaymentStatus).optional(),
+  checkout: z.literal("today").optional(),
 });
 export const createBooking = async (req: Request, res: Response) => {
   try {
@@ -154,6 +159,17 @@ export const createBooking = async (req: Request, res: Response) => {
     } = result.data;
     // Check for availability of rooms
     const roomIds = rooms.map((r: { roomId: string }) => r.roomId);
+    const paymentIds = [...new Set(payments.map((payment) => payment.paymentMethodId))];
+    const [guest, roomCount, paymentMethodCount] = await Promise.all([
+      prisma.customer.findFirst({ where: { id: customerId, businessId: user.businessId, locationId: user.locationId } }),
+      prisma.room.count({ where: { id: { in: roomIds }, locationId: user.locationId } }),
+      prisma.customLabels.count({ where: { id: { in: paymentIds }, locationId: user.locationId, type: "payment", isActive: true } }),
+    ]);
+    if (!guest || roomCount !== roomIds.length || paymentMethodCount !== paymentIds.length) {
+      res.status(400).json({ message: "Guest, rooms and payment methods must belong to the selected hotel" });
+      return;
+    }
+
     const conflicts = await prisma.reservationLine.findMany({
       where: {
         roomId: { in: roomIds },
@@ -236,14 +252,12 @@ export const createBooking = async (req: Request, res: Response) => {
             },
           });
           // Change room status if the reservation is today
-          await tx.room.update({
-            where: {
-              id: item.roomId,
-            },
-            data: {
-              status: "occupied",
-            },
-          });
+          if (autoCheckIn) {
+            await tx.room.update({
+              where: { id: item.roomId },
+              data: { status: "occupied" },
+            });
+          }
         }),
       );
 
@@ -302,54 +316,77 @@ export const fetchReservations = async (req: Request, res: Response) => {
       res.status(401).json({ messgae: "Unauthorized" });
       return;
     }
-    const {
-      search,
-      limit = 10,
-      page,
-    } = reservationPaginationSchema.parse(req.query);
+    const parsed = reservationPaginationSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ message: "Invalid booking filters" });
+      return;
+    }
+
+    const { search, limit, page, status, paymentStatus, checkout } = parsed.data;
     const skip = (page - 1) * limit;
-    // Fetch the room
-    const where: any = {
+    const lineStatus = checkout === "today" ? ReservationRoomStatus.checked_in : status;
+    const where: Prisma.ReservationWhereInput = {
       locationId: user.locationId,
+      paymentStatus,
+      ...(lineStatus && { reservationLines: { some: { status: lineStatus } } }),
     };
+
+    if (checkout === "today") {
+      const hotel = await prisma.location.findUnique({
+        where: { id: user.locationId },
+        select: { timezone: true },
+      });
+      const { start, end } = hotelDayRange(new Date(), hotel?.timezone ?? "Africa/Lagos");
+      where.departureDate = { gte: start, lt: end };
+    }
+
     if (search) {
       where.OR = [
-        {
-          roomNumber: {
-            contains: search,
-          },
-        },
+        { bookingNumber: { contains: search } },
+        { customer: { firstName: { contains: search } } },
+        { customer: { lastName: { contains: search } } },
+        { customer: { phone: { contains: search } } },
+        { reservationLines: { some: { status: lineStatus, room: { roomNumber: { contains: search } } } } },
       ];
     }
+    const select = {
+      id: true,
+      bookingNumber: true,
+      paymentStatus: true,
+      totalAmount: true,
+      reservationDate: true,
+      user: { select: { name: true } },
+      arrivalDate: true,
+      departureDate: true,
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
+    } satisfies Prisma.ReservationSelect;
+    const query = {
+      orderBy: [checkout ? { departureDate: "asc" } : { reservationDate: "desc" }, { id: "asc" }],
+      skip,
+      take: limit,
+      where,
+    } satisfies Prisma.ReservationFindManyArgs;
+    const bookings = checkout
+      ? prisma.reservation.findMany({
+          ...query,
+          select: {
+            ...select,
+            reservationLines: {
+              where: { status: ReservationRoomStatus.checked_in },
+              orderBy: { room: { roomNumber: "asc" } },
+              select: { id: true, room: { select: { roomNumber: true } } },
+            },
+          },
+        }).then(rows => rows.map(({ reservationLines, ...reservation }) => ({
+          ...reservation,
+          checkedInRooms: reservationLines.map(line => ({
+            id: line.id,
+            roomNumber: line.room.roomNumber,
+          })),
+        })))
+      : prisma.reservation.findMany({ ...query, select });
     const [reservations, total] = await Promise.all([
-      prisma.reservation.findMany({
-        orderBy: { reservationDate: "desc" },
-        select: {
-          id: true,
-          bookingNumber: true,
-          paymentStatus: true,
-          totalAmount: true,
-          reservationDate: true,
-          user: {
-            select: {
-              name: true,
-            },
-          },
-          arrivalDate: true,
-          departureDate: true,
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phone: true,
-            },
-          },
-        },
-        skip,
-        take: limit,
-        where,
-      }),
+      bookings,
       prisma.reservation.count({ where }),
     ]);
     res.status(200).json({
@@ -373,6 +410,78 @@ export const fetchReservations = async (req: Request, res: Response) => {
     res.status(500).json({
       message: "Failed to fetch reservation",
     });
+  }
+};
+
+export const fetchReservationCalendar = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const start = typeof req.query.start === "string" ? new Date(req.query.start) : null;
+    const end = typeof req.query.end === "string" ? new Date(req.query.end) : null;
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      res.status(400).json({ message: "Enter a valid calendar date range" });
+      return;
+    }
+
+    const rooms = await prisma.room.findMany({
+      where: { locationId: user.locationId },
+      orderBy: [{ floor: "asc" }, { roomNumber: "asc" }],
+      select: {
+        id: true,
+        roomNumber: true,
+        floor: true,
+        status: true,
+        roomType: { select: { id: true, name: true } },
+        reservationLines: {
+          where: {
+            status: { notIn: ["cancelled", "no_show"] },
+            reservation: {
+              arrivalDate: { lt: end },
+              departureDate: { gt: start },
+            },
+          },
+          orderBy: { reservation: { arrivalDate: "asc" } },
+          select: {
+            id: true,
+            status: true,
+            checkInDate: true,
+            checkOutDate: true,
+            reservation: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                arrivalDate: true,
+                departureDate: true,
+                customer: { select: { firstName: true, lastName: true, phone: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      data: {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        rooms: rooms.map(({ reservationLines, ...room }) => ({
+          ...room,
+          stays: reservationLines.map(({ reservation, ...line }) => ({ ...line, ...reservation })),
+        })),
+      },
+    });
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+      endpoint: "/api/v1/reservations/calendar",
+      method: "GET",
+      requestQuery: req.query,
+    });
+    res.status(500).json({ message: "Failed to load reservation calendar" });
   }
 };
 export const fetchReservationById = async (req: Request, res: Response) => {

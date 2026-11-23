@@ -1,3 +1,4 @@
+import { requirePermission } from "../../middleware/middleware.js";
 import {
   createRoom,
   editRoom,
@@ -6,10 +7,13 @@ import {
 } from "../../controllers/room.controller.js";
 import { Router } from "express";
 
+import { createBulkRooms } from "../../controllers/bulk-room.controller.js";
+
 const router = Router();
-router.get("/", fetchRooms);
-router.post("/", createRoom);
-router.get("/:id", fetchRoomById);
-router.patch("/:id/edit", editRoom);
+router.get("/", requirePermission("rooms:view"), fetchRooms);
+router.post("/", requirePermission("rooms:create"), createRoom);
+router.post("/bulk", requirePermission("rooms:create"), createBulkRooms);
+router.get("/:id", requirePermission("rooms:view"), fetchRoomById);
+router.patch("/:id/edit", requirePermission("rooms:edit"), editRoom);
 
 export { router as roomRouter };

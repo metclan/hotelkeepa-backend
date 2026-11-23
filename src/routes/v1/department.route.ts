@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { workspace } from "../../controllers/workspace.controller.js";
+const router = Router();
+router.get("/", workspace.listDepartments);
+router.post("/", workspace.createDepartment);
+router.patch("/:id", workspace.updateDepartment);
+router.delete("/:id", workspace.deleteDepartment);
+router.get("/:id/members", workspace.departmentMembers);
+router.put("/:id/members", workspace.saveDepartmentMembers);
+export { router as departmentRouter };

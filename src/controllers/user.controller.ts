@@ -46,7 +46,8 @@ export const fetchUsers = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
     // Fetch the user
     const where: any = {
-      locationId: user.locationId,
+      businessId: user.businessId,
+      locationAccess: { some: { locationId: user.locationId, isActive: true } },
     };
     if (search) {
       where.OR = [
@@ -65,11 +66,7 @@ export const fetchUsers = async (req: Request, res: Response) => {
           isOwner: true,
           email: true,
           id: true,
-          role: {
-            select: {
-              name: true,
-            },
-          },
+          locationAccess: { where: { locationId: user.locationId }, select: { role: { select: { name: true } } } },
         },
         skip,
         take: limit,
@@ -78,7 +75,7 @@ export const fetchUsers = async (req: Request, res: Response) => {
       prisma.user.count({ where }),
     ]);
     res.status(200).json({
-      data: users,
+      data: users.map(({ locationAccess, ...member }) => ({ ...member, role: locationAccess[0]?.role ?? null })),
       pagination: {
         limit,
         page,
@@ -102,6 +99,14 @@ export const fetchUsers = async (req: Request, res: Response) => {
 };
 export const sendInvitation = async (req: Request, res: Response) => {
   const { email, name, roleId, locationId } = req.body;
+  const [targetLocation, targetRole] = await Promise.all([
+    prisma.location.findFirst({ where: { id: locationId, businessId: req.user!.businessId, isActive: true, isDeleted: false } }),
+    prisma.role.findFirst({ where: { id: roleId, locationId } }),
+  ]);
+  if (!targetLocation || !targetRole) {
+    res.status(400).json({ message: "Choose a hotel and role from your business" });
+    return;
+  }
   // Ensure that this user isn't already on the database
   const existingUser = await prisma.user.findUnique({
     where: {
@@ -212,6 +217,9 @@ export const acceptInvitation = async (req: Request, res: Response) => {
       isOwner: false,
       onboardingStage: 2,
     },
+  });
+  await prisma.userLocation.create({
+    data: { userId: newUser.user.id, locationId: invitation.locationId, roleId: invitation.roleId },
   });
   await prisma.invitation.update({
     where: { id: invitation.id },
@@ -416,17 +424,21 @@ export const modifyUserRole = async (req: Request, res: Response) => {
       return;
     }
     const { roleId } = result.data;
-    // Ensure this user exists
+    if (!roleId) { res.status(400).json({ message: "Role is required" }); return; }
+    const validRole = await prisma.role.findFirst({ where: { id: roleId, locationId: user.locationId } });
+    if (!validRole) { res.status(400).json({ message: "Role must belong to the selected hotel" }); return; }
+    // Ensure this user exists in the selected hotel's membership.
     const alreadyExists = await prisma.user.findFirst({
-      where: { id: id.toString() },
+      where: { id: id.toString(), businessId: user.businessId, locationAccess: { some: { locationId: user.locationId, isActive: true } } },
     });
     if (!alreadyExists) {
       res.status(403).json({ message: "User not found " });
       return;
     }
-    await prisma.user.update({
-      where: { id: id.toString() },
-      data: { roleId: roleId },
+    if (alreadyExists.isOwner) { res.status(403).json({ message: "The business owner's access cannot be changed" }); return; }
+    await prisma.$transaction(async (tx) => {
+      await tx.userLocation.update({ where: { userId_locationId: { userId: alreadyExists.id, locationId: user.locationId! } }, data: { roleId } });
+      if (alreadyExists.locationId === user.locationId) await tx.user.update({ where: { id: alreadyExists.id }, data: { roleId } });
     });
     res.status(200).json({ message: "Updated user role successfully" });
   } catch (error) {

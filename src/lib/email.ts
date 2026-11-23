@@ -1,21 +1,29 @@
-// lib/email.ts
-import nodemailer from "nodemailer";
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
-export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: process.env.SMTP_SECURE === "true", // true for 465, false for 587
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+export type EmailOptions = { to: string; subject: string; html: string; text?: string };
 
-// verify connection on startup
-transporter.verify((error) => {
-  if (error) {
-    console.error("Email connection failed:", error);
-  } else {
-    console.log("Email server ready");
-  }
-});
+export function buildSesEmail(options: EmailOptions, from: string, replyTo?: string, configurationSet?: string) {
+  return new SendEmailCommand({
+    FromEmailAddress: from,
+    Destination: { ToAddresses: [options.to] },
+    ReplyToAddresses: replyTo ? [replyTo] : undefined,
+    ConfigurationSetName: configurationSet || undefined,
+    Content: { Simple: {
+      Subject: { Data: options.subject, Charset: "UTF-8" },
+      Body: {
+        Html: { Data: options.html, Charset: "UTF-8" },
+        ...(options.text ? { Text: { Data: options.text, Charset: "UTF-8" } } : {}),
+      },
+    } },
+  });
+}
+
+let client: SESv2Client | undefined;
+export async function sendSesEmail(options: EmailOptions): Promise<void> {
+  const from = process.env.SES_FROM_EMAIL?.trim();
+  const region = process.env.AWS_REGION?.trim();
+  if (!from || !region) throw new Error("SES_FROM_EMAIL and AWS_REGION are required for email delivery");
+  // Uses the AWS credential chain (environment credentials or deployment IAM role).
+  client ??= new SESv2Client({ region, maxAttempts: 2 });
+  await client.send(buildSesEmail(options, from, process.env.SES_REPLY_TO_EMAIL, process.env.SES_CONFIGURATION_SET));
+}

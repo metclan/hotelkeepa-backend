@@ -41,6 +41,7 @@ export const bookingSchema = z
     customerId: z.string().trim().min(1, "Guest is required"),
     reservationDate: z.string().trim().min(1, "Reservation date is required"),
     arrivalDate: z.string().trim().min(1, "Arrival date and time is required"),
+    autoCheckIn: z.boolean().default(false),
     departureDate: z
         .string()
         .trim()
@@ -102,13 +103,23 @@ export const createBooking = async (req, res) => {
             });
             return;
         }
-        const { customerId, reservationDate, arrivalDate, departureDate, totalAmount, payments, rooms, notes, } = result.data;
+        const { customerId, reservationDate, arrivalDate, departureDate, totalAmount, payments, rooms, notes, autoCheckIn, } = result.data;
         // Check for availability of rooms
         const roomIds = rooms.map((r) => r.roomId);
+        const paymentIds = [...new Set(payments.map((payment) => payment.paymentMethodId))];
+        const [guest, roomCount, paymentMethodCount] = await Promise.all([
+            prisma.customer.findFirst({ where: { id: customerId, businessId: user.businessId, locationId: user.locationId } }),
+            prisma.room.count({ where: { id: { in: roomIds }, locationId: user.locationId } }),
+            prisma.customLabels.count({ where: { id: { in: paymentIds }, locationId: user.locationId, type: "payment", isActive: true } }),
+        ]);
+        if (!guest || roomCount !== roomIds.length || paymentMethodCount !== paymentIds.length) {
+            res.status(400).json({ message: "Guest, rooms and payment methods must belong to the selected hotel" });
+            return;
+        }
         const conflicts = await prisma.reservationLine.findMany({
             where: {
                 roomId: { in: roomIds },
-                status: { not: "cancelled" },
+                status: { notIn: ["cancelled", "checked_out", "no_show"] },
                 reservation: {
                     AND: [
                         { arrivalDate: { lt: new Date(departureDate) } },
@@ -150,7 +161,7 @@ export const createBooking = async (req, res) => {
                 type: "BK",
                 count: increment.currentNumber,
             });
-            const { totalAmountDue, totalAmountPaid, paymentStatus, inboundPayments, } = formatPaymentMethod({
+            const { totalAmountPaid, paymentStatus, inboundPayments } = formatPaymentMethod({
                 totalAmount,
                 payments,
             });
@@ -170,17 +181,30 @@ export const createBooking = async (req, res) => {
                 },
             });
             // Create reservation lines
-            const reservationLines = await Promise.all(rooms.map(async (item) => {
-                const reservationLineItem = await tx.reservationLine.create({
+            await Promise.all(rooms.map(async (item) => {
+                // Add the reservation line
+                await tx.reservationLine.create({
                     data: {
                         reservationId: newReservation.id,
+                        numberOfAdults: item.adults,
+                        numberOfChildren: item.children,
+                        ...(autoCheckIn
+                            ? { checkInDate: arrivalDate, status: "checked_in" }
+                            : {}),
                         roomId: item.roomId,
                         pricePerNight: item.pricePerNight,
                     },
                 });
+                // Change room status if the reservation is today
+                if (autoCheckIn) {
+                    await tx.room.update({
+                        where: { id: item.roomId },
+                        data: { status: "occupied" },
+                    });
+                }
             }));
             // Create payments and payment allocations
-            const payment = await tx.payment.create({
+            await tx.payment.create({
                 data: {
                     locationId: user.locationId,
                     contactType: "customer",
@@ -298,6 +322,75 @@ export const fetchReservations = async (req, res) => {
         });
     }
 };
+export const fetchReservationCalendar = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+        const start = typeof req.query.start === "string" ? new Date(req.query.start) : null;
+        const end = typeof req.query.end === "string" ? new Date(req.query.end) : null;
+        if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+            res.status(400).json({ message: "Enter a valid calendar date range" });
+            return;
+        }
+        const rooms = await prisma.room.findMany({
+            where: { locationId: user.locationId },
+            orderBy: [{ floor: "asc" }, { roomNumber: "asc" }],
+            select: {
+                id: true,
+                roomNumber: true,
+                floor: true,
+                status: true,
+                roomType: { select: { id: true, name: true } },
+                reservationLines: {
+                    where: {
+                        status: { notIn: ["cancelled", "no_show"] },
+                        reservation: {
+                            arrivalDate: { lt: end },
+                            departureDate: { gt: start },
+                        },
+                    },
+                    orderBy: { reservation: { arrivalDate: "asc" } },
+                    select: {
+                        id: true,
+                        status: true,
+                        checkInDate: true,
+                        checkOutDate: true,
+                        reservation: {
+                            select: {
+                                id: true,
+                                bookingNumber: true,
+                                arrivalDate: true,
+                                departureDate: true,
+                                customer: { select: { firstName: true, lastName: true, phone: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        res.status(200).json({
+            data: {
+                start: start.toISOString(),
+                end: end.toISOString(),
+                rooms: rooms.map(({ reservationLines, ...room }) => ({
+                    ...room,
+                    stays: reservationLines.map(({ reservation, ...line }) => ({ ...line, ...reservation })),
+                })),
+            },
+        });
+    }
+    catch (error) {
+        sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+            endpoint: "/api/v1/reservations/calendar",
+            method: "GET",
+            requestQuery: req.query,
+        });
+        res.status(500).json({ message: "Failed to load reservation calendar" });
+    }
+};
 export const fetchReservationById = async (req, res) => {
     const { reservationId } = req.params;
     try {
@@ -320,6 +413,7 @@ export const fetchReservationById = async (req, res) => {
                 reservationDate: true,
                 reservationLines: {
                     select: {
+                        id: true,
                         checkInDate: true,
                         checkOutDate: true,
                         numberOfChildren: true,
@@ -607,6 +701,180 @@ export const printBookingReceipt = async (req, res) => {
         });
         res.status(500).json({
             message: "Failed to fetch reservation by id",
+        });
+    }
+};
+export const checkIn = async (req, res) => {
+    const { reservationLineId } = req.params;
+    try {
+        const user = req.user;
+        if (!user) {
+            res.status(401).json({ messgae: "Unauthorized" });
+            return;
+        }
+        if (!reservationLineId) {
+            res.status(400).json({ message: "Reservation ID required " });
+            return;
+        }
+        const reservationLine = await prisma.reservationLine.findUnique({
+            where: {
+                id: reservationLineId.toString(),
+                reservation: { locationId: user.locationId },
+            },
+            select: {
+                status: true,
+                roomId: true,
+                reservation: {
+                    select: {
+                        departureDate: true,
+                        arrivalDate: true,
+                    },
+                },
+            },
+        });
+        if (!reservationLine) {
+            res.status(403).json({ message: "Reservation not found for checkin" });
+            return;
+        }
+        // already checkin in
+        if (reservationLine.status === "checked_in") {
+            res.status(400).json({ message: "Guest is already checked in " });
+            return;
+        }
+        // already check out
+        if (reservationLine.status === "checked_out") {
+            res
+                .status(400)
+                .json({ message: "This reservation has already been checkout out" });
+            return;
+        }
+        // cancelled
+        if (reservationLine.status === "cancelled") {
+            res
+                .status(400)
+                .json({ message: "Cannot check in a cancelled reservation" });
+            return;
+        }
+        const now = new Date();
+        const departureDate = new Date(reservationLine.reservation.departureDate);
+        if (now >= departureDate) {
+            res.status(400).json({ message: "Cannot check in after departure date" });
+            return;
+        }
+        // early check-in warning
+        const arrivalDate = new Date(reservationLine.reservation.arrivalDate);
+        if (now < arrivalDate) {
+            res
+                .status(400)
+                .json({ message: "Guest cannot check in before arrival date/time" });
+            return;
+        }
+        await prisma.$transaction(async (tx) => {
+            await tx.reservationLine.update({
+                where: { id: reservationLineId.toString() },
+                data: {
+                    status: "checked_in",
+                    checkInDate: now,
+                },
+            });
+            // update the room status to occupied
+            await tx.room.update({
+                where: { id: reservationLine.roomId },
+                data: { status: "occupied" },
+            });
+        });
+        res.status(200).json({
+            message: "Guest checked in successfully",
+        });
+    }
+    catch (error) {
+        sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+            endpoint: `/api/v1/reservations/${reservationLineId}/checkin`,
+            method: "POST",
+        });
+        res.status(500).json({
+            message: "Failed to check in guest",
+        });
+    }
+};
+export const checkOut = async (req, res) => {
+    const { reservationLineId } = req.params;
+    try {
+        const user = req.user;
+        if (!user) {
+            res.status(401).json({ messgae: "Unauthorized" });
+            return;
+        }
+        if (!reservationLineId) {
+            res.status(400).json({ message: "Reservation ID required " });
+            return;
+        }
+        const reservationLine = await prisma.reservationLine.findUnique({
+            where: {
+                id: reservationLineId.toString(),
+                reservation: { locationId: user.locationId },
+            },
+            select: {
+                status: true,
+                roomId: true,
+                reservation: {
+                    select: {
+                        id: true,
+                        departureDate: true,
+                        arrivalDate: true,
+                    },
+                },
+            },
+        });
+        if (!reservationLine) {
+            res.status(403).json({ message: "Reservation not found for checkin" });
+            return;
+        }
+        // already check out
+        if (reservationLine.status === "checked_out") {
+            res
+                .status(400)
+                .json({ message: "This reservation has already been checkout out" });
+            return;
+        }
+        // cancelled
+        if (reservationLine.status === "cancelled") {
+            res
+                .status(400)
+                .json({ message: "Cannot check in a cancelled reservation" });
+            return;
+        }
+        const now = new Date();
+        await prisma.$transaction(async (tx) => {
+            await tx.reservationLine.update({
+                where: { id: reservationLineId.toString() },
+                data: {
+                    status: "checked_out",
+                    checkOutDate: now,
+                },
+            });
+            // update the room status to maintainance
+            await tx.room.update({
+                where: { id: reservationLine.roomId },
+                data: { status: "maintenance" },
+            });
+            // Update the reservation departure date to checkout time and date
+            await tx.reservation.update({
+                where: { id: reservationLine.reservation.id.toString() },
+                data: { departureDate: now },
+            });
+        });
+        res.status(200).json({
+            message: "Guest checked in successfully",
+        });
+    }
+    catch (error) {
+        sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+            endpoint: `/api/v1/reservations/${reservationLineId}/checkin`,
+            method: "POST",
+        });
+        res.status(500).json({
+            message: "Failed to check in guest",
         });
     }
 };

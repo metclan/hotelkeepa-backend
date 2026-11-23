@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { PrismaClient } from "./generated/prisma/client.js";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { createAuthMiddleware } from "better-auth/api";
-import { sendEmail } from "./lib/email.service.js";
+import { sendEmail, sendWelcomeEmail, escapeHtml } from "./lib/email.service.js";
 import { DEFAULT_ROLES } from "./lib/defaultRoles.js";
 
 const prisma = new PrismaClient();
@@ -53,7 +53,12 @@ export const auth = betterAuth({
           status: "pending",
         },
       });
-      if (invitation) return;
+      if (invitation) {
+        await sendWelcomeEmail({ to: newUser.email, name: newUser.name }).catch(() => {
+          console.error("SES welcome email failed after signup");
+        });
+        return;
+      }
       await prisma.$transaction(async (tx) => {
         // Create a new business
         const business = await tx.business.create({
@@ -66,6 +71,18 @@ export const auth = betterAuth({
           data: {
             name: null,
             businessId: business.id,
+          },
+        });
+        await tx.userLocation.create({
+          data: { userId: newUser.id, locationId: newLocation.id, allDepartments: true },
+        });
+        await tx.customer.create({
+          data: {
+            businessId: business.id,
+            locationId: newLocation.id,
+            firstName: "Walking Customer",
+            phone: "001",
+            isWalking: true,
           },
         });
         // Fetch all permissions from DB
@@ -95,6 +112,10 @@ export const auth = betterAuth({
         if (!adminRole) {
           throw new Error("Admin role could not be created");
         }
+        await tx.userLocation.update({
+          where: { userId_locationId: { userId: newUser.id, locationId: newLocation.id } },
+          data: { roleId: adminRole.id },
+        });
         // Update user role and mark as owner
         await tx.user.update({
           where: {
@@ -108,6 +129,10 @@ export const auth = betterAuth({
           },
         });
       });
+      // Account creation is durable even if SES is temporarily unavailable.
+      await sendWelcomeEmail({ to: newUser.email, name: newUser.name }).catch(() => {
+        console.error("SES welcome email failed after signup");
+      });
     }),
   },
   trustedOrigins: [
@@ -118,19 +143,19 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
-    sendResetPassword: async ({ user, url }) => {
-      const parsedUrl = new URL(url);
-      const token = parsedUrl.pathname.split("/").pop();
-      const frontendUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    sendResetPassword: async ({ user, token }) => {
+      const resetUrl = new URL("/reset-password", process.env.FRONTEND_URL);
+      resetUrl.searchParams.set("token", token);
+      const frontendUrl = resetUrl.toString();
       await sendEmail({
         to: user.email,
         subject: "Reset your password",
         html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2>Reset Your Password</h2>
-            <p>Hi ${user.name},</p>
+            <p>Hi ${escapeHtml(user.name)},</p>
             <p>We received a request to reset your password. Click the button below:</p>
             <a 
-              href="${frontendUrl}"
+              href="${escapeHtml(frontendUrl)}"
               style="
                 display: inline-block;
                 padding: 12px 24px;
@@ -155,7 +180,7 @@ export const auth = betterAuth({
       await sendEmail({
         to: user.email,
         subject: "Verify your email",
-        html: `Click here to verify your email : ${url}`,
+        html: `Click here to verify your email : ${escapeHtml(url)}`,
       });
     },
   },

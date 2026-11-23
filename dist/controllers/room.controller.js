@@ -24,6 +24,8 @@ const roomPaginationSchema = z.object({
         .optional()
         .transform((val) => (val ? parseInt(val) : 1)),
     search: z.string().optional(),
+    roomTypeId: z.string().optional(),
+    status: z.string().optional(),
 });
 const prisma = new PrismaClient();
 export const createRoom = async (req, res) => {
@@ -45,9 +47,13 @@ export const createRoom = async (req, res) => {
             return;
         }
         const { roomNumber, roomTypeId, floor, status } = result.data;
+        if (!await prisma.roomType.findFirst({ where: { id: roomTypeId, locationId: user.locationId } })) {
+            res.status(400).json({ message: "Room type must belong to the selected hotel" });
+            return;
+        }
         // Ensure no other room has same name
         const alreadyExists = await prisma.room.findFirst({
-            where: { roomNumber },
+            where: { roomNumber, locationId: user.locationId },
         });
         if (alreadyExists) {
             res.status(409).json({ message: "Room already exists " });
@@ -82,7 +88,18 @@ export const fetchRooms = async (req, res) => {
             res.status(401).json({ messgae: "Unauthorized" });
             return;
         }
-        const { search, limit = 10, page } = roomPaginationSchema.parse(req.query);
+        const { search, limit = 10, page, roomTypeId, status } = roomPaginationSchema.parse(req.query);
+        const arrivalDate = typeof req.query.arrivalDate === "string" ? new Date(req.query.arrivalDate) : null;
+        const departureDate = typeof req.query.departureDate === "string" ? new Date(req.query.departureDate) : null;
+        const hasDateRange = arrivalDate && departureDate;
+        if ((arrivalDate && !departureDate) ||
+            (!arrivalDate && departureDate) ||
+            (hasDateRange && (Number.isNaN(arrivalDate.getTime()) ||
+                Number.isNaN(departureDate.getTime()) ||
+                departureDate <= arrivalDate))) {
+            res.status(400).json({ message: "Enter a valid arrival and departure date range" });
+            return;
+        }
         const skip = (page - 1) * limit;
         // Fetch the room
         const where = {
@@ -97,6 +114,19 @@ export const fetchRooms = async (req, res) => {
                 },
             ];
         }
+        if (roomTypeId)
+            where.roomTypeId = { in: roomTypeId.split(",").filter(Boolean) };
+        if (status)
+            where.status = { in: status.split(",").filter(Boolean) };
+        const conflictingReservationWhere = hasDateRange
+            ? {
+                status: { notIn: ["cancelled", "checked_out", "no_show"] },
+                reservation: {
+                    arrivalDate: { lt: departureDate },
+                    departureDate: { gt: arrivalDate },
+                },
+            }
+            : { id: "__no_date_range__" };
         const [rooms, total] = await Promise.all([
             prisma.room.findMany({
                 orderBy: { roomNumber: "asc" },
@@ -115,6 +145,10 @@ export const fetchRooms = async (req, res) => {
                             maxOccupancy: true,
                         },
                     },
+                    reservationLines: {
+                        where: conflictingReservationWhere,
+                        select: { status: true },
+                    },
                 },
                 skip,
                 take: limit,
@@ -123,7 +157,17 @@ export const fetchRooms = async (req, res) => {
             prisma.room.count({ where }),
         ]);
         res.status(200).json({
-            data: rooms,
+            data: rooms.map(({ reservationLines, ...room }) => {
+                const hasCheckedInConflict = reservationLines.some((line) => line.status === "checked_in");
+                const availabilityStatus = room.status === "maintenance"
+                    ? "maintenance"
+                    : hasCheckedInConflict
+                        ? "checked_in"
+                        : reservationLines.length > 0
+                            ? "reserved"
+                            : "available";
+                return { ...room, availabilityStatus };
+            }),
             pagination: {
                 limit,
                 page,
@@ -136,6 +180,116 @@ export const fetchRooms = async (req, res) => {
         sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
             endpoint: "/api/v1/rooms",
             method: "GET",
+            requestQuery: req.query,
+        });
+        res.status(500).json({
+            message: "Failed to fetch room",
+        });
+    }
+};
+export const fetchRoomById = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = req.user;
+        if (!user) {
+            res.status(401).json({ messgae: "Unauthorized" });
+            return;
+        }
+        if (!id) {
+            res.status(400).json({ message: "Room ID not found" });
+            return;
+        }
+        const room = await prisma.room.findUnique({
+            where: {
+                id: id.toString(),
+                locationId: user.locationId,
+            },
+            select: {
+                roomNumber: true,
+                roomTypeId: true,
+                floor: true,
+                status: true,
+            },
+        });
+        if (!room) {
+            res.status(400).json({ message: "Room not found" });
+            return;
+        }
+        res.status(200).json(room);
+    }
+    catch (error) {
+        sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+            endpoint: "/api/v1/rooms",
+            method: "GET",
+            requestQuery: req.query,
+        });
+        res.status(500).json({
+            message: "Failed to fetch room",
+        });
+    }
+};
+export const editRoom = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = req.user;
+        if (!user) {
+            res.status(401).json({ messgae: "Unauthorized" });
+            return;
+        }
+        if (!id) {
+            res.status(400).json({ message: "Room ID not found" });
+            return;
+        }
+        const result = roomSchema.safeParse(req.body);
+        if (!result.success) {
+            res.status(400).json({
+                message: "Validation failed",
+                errors: result.error.issues.map((issue) => ({
+                    field: issue.path.join("."),
+                    message: issue.message,
+                })),
+            });
+            return;
+        }
+        const { roomNumber, roomTypeId, floor, status } = result.data;
+        if (!await prisma.roomType.findFirst({ where: { id: roomTypeId, locationId: user.locationId } })) {
+            res.status(400).json({ message: "Room type must belong to the selected hotel" });
+            return;
+        }
+        const room = await prisma.room.findUnique({
+            where: {
+                id: id.toString(),
+                locationId: user.locationId,
+            },
+            select: {
+                roomNumber: true,
+                roomTypeId: true,
+                floor: true,
+                status: true,
+            },
+        });
+        if (!room) {
+            res.status(400).json({ message: "Room not found" });
+            return;
+        }
+        await prisma.room.update({
+            where: {
+                id: id.toString(),
+                locationId: user.locationId,
+            },
+            data: {
+                roomNumber: roomNumber,
+                roomTypeId,
+                floor,
+                status,
+            },
+        });
+        res.status(200).json({ message: "Room updated successfully" });
+    }
+    catch (error) {
+        sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+            endpoint: `/api/v1/rooms/${id}`,
+            method: "PATCH",
             requestQuery: req.query,
         });
         res.status(500).json({

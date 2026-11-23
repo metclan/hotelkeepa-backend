@@ -20,6 +20,9 @@ app.use(
   }),
 );
 app.use("/api/auth/{*any}", toNodeHandler(auth));
+// Allow a small inline hotel logo only on the onboarding endpoint.
+app.use("/api/v1/onboard/business", express.json({ limit: "300kb" }));
+app.use("/api/v1/products", express.json({ limit: "300kb" }));
 app.use(express.json());
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "OK" });

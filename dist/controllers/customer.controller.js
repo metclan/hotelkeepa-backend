@@ -18,6 +18,7 @@ export const customerSchema = z.object({
     firstName: z.string().trim().min(1, "First name is required"),
     lastName: optionalTrimmedString,
     phone: z.string().trim().min(1, "Phone number is required"),
+    isWalking: z.boolean().optional(),
     email: z
         .string()
         .trim()
@@ -42,6 +43,7 @@ const customerPaginationSchema = z.object({
         .optional()
         .transform((val) => (val ? parseInt(val) : 1)),
     search: z.string().optional(),
+    isWalking: z.enum(["true", "false"]).optional(),
 });
 export const createCustomer = async (req, res) => {
     try {
@@ -61,10 +63,10 @@ export const createCustomer = async (req, res) => {
             });
             return;
         }
-        const { firstName, lastName, phone, email, dateOfBirth, address, gender, idType, idNumber, nationality, occupation, } = result.data;
+        const { firstName, lastName, phone, email, dateOfBirth, address, gender, idType, idNumber, nationality, occupation, isWalking, } = result.data;
         // Ensure no other customer has same phone number
         const alreadyExists = await prisma.customer.findFirst({
-            where: { phone, locationId: user.locationId },
+            where: { phone, businessId: user.businessId, locationId: user.locationId },
         });
         if (alreadyExists) {
             res
@@ -72,12 +74,14 @@ export const createCustomer = async (req, res) => {
                 .json({ message: "customer already exists with this phone number " });
             return;
         }
-        await prisma.customer.create({
+        const customer = await prisma.customer.create({
             data: {
                 locationId: user.locationId,
+                businessId: user.businessId,
                 firstName,
                 lastName,
                 phone,
+                isWalking,
                 email,
                 dateOfBirth,
                 address,
@@ -87,8 +91,23 @@ export const createCustomer = async (req, res) => {
                 nationality,
                 occupation,
             },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+                isWalking: true,
+                email: true,
+                dateOfBirth: true,
+                address: true,
+                gender: true,
+                idType: true,
+                idNumber: true,
+                nationality: true,
+                occupation: true,
+            },
         });
-        res.status(200).json({ message: "Created room successfully" });
+        res.status(201).json({ customer });
     }
     catch (error) {
         sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
@@ -108,11 +127,12 @@ export const fetchCustomers = async (req, res) => {
             res.status(401).json({ messgae: "Unauthorized" });
             return;
         }
-        const { search, limit = 10, page, } = customerPaginationSchema.parse(req.query);
+        const { search, limit = 10, page, isWalking, } = customerPaginationSchema.parse(req.query);
         const skip = (page - 1) * limit;
         // Fetch the room
         const where = {
             locationId: user.locationId,
+            ...(isWalking ? { isWalking: isWalking === "true" } : {}),
         };
         if (search) {
             where.OR = [
@@ -129,6 +149,8 @@ export const fetchCustomers = async (req, res) => {
                     firstName: true,
                     lastName: true,
                     phone: true,
+                    isWalking: true,
+                    businessId: true,
                     email: true,
                     address: true,
                     dateOfBirth: true,

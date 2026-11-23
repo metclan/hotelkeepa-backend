@@ -14,6 +14,11 @@ import { permissionRouter } from "./permission.route.js";
 import { loadPermissions } from "../../middleware/middleware.js";
 import { authRouter } from "./auth.route.js";
 
+import { departmentRouter } from "./department.route.js";
+import { productRouter } from "./product.route.js";
+import { posRouter } from "./pos.route.js";
+import { diningTableRouter } from "./dining-table.route.js";
+
 const router = Router();
 
 router.use("/onboard", onboardRouter);
@@ -29,6 +34,10 @@ router.use("/reservations", reservationRouter);
 router.use("/reports", reportRouter);
 router.use("/roles", roleRouter);
 router.use("/locations", locationRouter);
+router.use("/departments", departmentRouter);
+router.use("/products", productRouter);
+router.use("/pos", posRouter);
+router.use("/tables", diningTableRouter);
 router.use("/permissions", permissionRouter);
 
 export { router as indexRouter };

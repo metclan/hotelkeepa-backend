@@ -70,3 +70,26 @@ export const PaymentStatus = {
     partially_paid: 'partially_paid',
     due: 'due'
 };
+export const HotelSetupPreset = {
+    reservations_only: 'reservations_only',
+    reservations_bar: 'reservations_bar',
+    full_service: 'full_service'
+};
+export const DepartmentAccessRole = {
+    staff: 'staff',
+    manager: 'manager'
+};
+export const StockMovementType = {
+    opening: 'opening',
+    adjustment: 'adjustment',
+    transfer: 'transfer',
+    purchase: 'purchase',
+    sale: 'sale',
+    adjustment_edited: 'adjustment_edited',
+    adjustment_deleted: 'adjustment_deleted'
+};
+export const PosOrderStatus = {
+    held: 'held',
+    paid: 'paid',
+    cancelled: 'cancelled'
+};

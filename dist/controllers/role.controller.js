@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { sendTelegramError } from "../utils/telegram.js";
+import { clearPermissionCache } from "../middleware/middleware.js";
 // Validation schema for pagination
 const rolesPaginationSchema = z.object({
     limit: z
@@ -172,6 +173,7 @@ export const updateRole = async (req, res) => {
                 })),
             });
         });
+        clearPermissionCache(id.toString());
         res.status(200).json({ message: "Updated role successfully" });
     }
     catch (error) {

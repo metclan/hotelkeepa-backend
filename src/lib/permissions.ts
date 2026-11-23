@@ -9,6 +9,23 @@ type Permission = {
   code: string;
 };
 export const permissionGroups: PermissionGroup = [
+  { name: "Point of Sale", code: "pos", description: "Operate the sales register", permissions: [{ name: "Use Point of Sale", code: "sales:pos" }] },
+  {
+    name: "Products", code: "products", description: "Manage the hotel product catalog and inventory",
+    permissions: [{ name: "View Products", code: "products:view" }, { name: "Manage Products", code: "products:manage" }],
+  },
+  {
+    name: "Tables", code: "tables", description: "View and manage service tables by department",
+    permissions: [{ name: "View Tables", code: "tables:view" }, { name: "Manage Tables", code: "tables:manage" }],
+  },
+  {
+    name: "Hotel Departments", code: "departments", description: "Manage departments in the selected hotel",
+    permissions: [{ name: "Manage Departments", code: "departments:manage" }],
+  },
+  {
+    name: "Hotel Locations", code: "locations", description: "Create hotel branches",
+    permissions: [{ name: "Create Hotel Locations", code: "locations:create" }],
+  },
   // Dashboard
   {
     name: "Dashboard",

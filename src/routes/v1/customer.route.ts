@@ -6,7 +6,7 @@ import {
 import { requirePermission } from "../../middleware/middleware.js";
 
 const router = Router();
-router.get("/", fetchCustomers);
-router.post("/", createCustomer);
+router.get("/", requirePermission("guests:view"), fetchCustomers);
+router.post("/", requirePermission("guests:create"), createCustomer);
 
 export { router as customerRouter };
