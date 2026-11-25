@@ -81,7 +81,7 @@ export const auth = betterAuth({
             businessId: business.id,
             locationId: newLocation.id,
             firstName: "Walking Customer",
-            phone: "001",
+            phone: "system",
             isWalking: true,
           },
         });

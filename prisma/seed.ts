@@ -1,5 +1,5 @@
 import { PrismaClient } from "../src/generated/prisma/client.js";
-import { permissionGroups } from "../src/lib/permissions.js";
+import { seedPermissions } from "../src/lib/seed-permissions.js";
 const prisma = new PrismaClient();
 
 async function main() {
@@ -205,37 +205,7 @@ async function main() {
     },
   ];
 
-  // Seed permissions
-  for (const permissionGroup of permissionGroups) {
-    const newPermissionGroup = await prisma.permissionGroup.upsert({
-      where: {
-        code: permissionGroup.code,
-      },
-      update: {
-        code: permissionGroup.code,
-        description: permissionGroup.description,
-        name: permissionGroup.name,
-      },
-      create: {
-        code: permissionGroup.code,
-        description: permissionGroup.description,
-        name: permissionGroup.name,
-      },
-    });
-    for (const permission of permissionGroup.permissions) {
-      await prisma.permission.upsert({
-        where: {
-          code: permission.code,
-        },
-        update: { code: permission.code, name: permission.name },
-        create: {
-          code: permission.code,
-          name: permission.name,
-          permissionGroupId: newPermissionGroup.id,
-        },
-      });
-    }
-  }
+  await seedPermissions(prisma);
 
   // Seed countries
   for (const country of countries) {

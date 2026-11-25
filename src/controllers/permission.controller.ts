@@ -1,6 +1,7 @@
 import { Response, Request } from "express";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { sendTelegramError } from "../utils/telegram.js";
+import { hiddenPermissionCodes } from "../lib/permissions.js";
 
 const prisma = new PrismaClient();
 
@@ -25,6 +26,7 @@ export const fetchPermission = async (req: Request, res: Response) => {
               {
                 permissions: {
                   some: {
+                    code: { notIn: hiddenPermissionCodes },
                     name: {
                       contains: search,
                     },
@@ -39,6 +41,7 @@ export const fetchPermission = async (req: Request, res: Response) => {
         name: true,
         description: true,
         permissions: {
+          where: { code: { notIn: hiddenPermissionCodes } },
           select: {
             id: true,
             name: true,
@@ -47,7 +50,7 @@ export const fetchPermission = async (req: Request, res: Response) => {
         },
       },
     });
-    res.status(200).json({ permissions });
+    res.status(200).json({ permissions: permissions.filter(group => group.permissions.length > 0) });
   } catch (error) {
     sendTelegramError(
       error instanceof Error ? error : new Error(String(error)),

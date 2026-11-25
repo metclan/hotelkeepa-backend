@@ -2,8 +2,8 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import { Request, Response } from "express";
-import { PrismaClient, type Prisma } from "../generated/prisma/client.js";
-import { PaymentStatus, ReservationRoomStatus } from "../generated/prisma/enums.js";
+import { Prisma, PrismaClient } from "../generated/prisma/client.js";
+import { PaymentStatus, ReservationRoomStatus, RoomStatus } from "../generated/prisma/enums.js";
 import { hotelDayRange } from "../utils/hotel-day-range.js";
 import { sendTelegramError } from "../utils/telegram.js";
 import { generatesIds } from "../utils/generateIds.js";
@@ -160,13 +160,18 @@ export const createBooking = async (req: Request, res: Response) => {
     // Check for availability of rooms
     const roomIds = rooms.map((r: { roomId: string }) => r.roomId);
     const paymentIds = [...new Set(payments.map((payment) => payment.paymentMethodId))];
-    const [guest, roomCount, paymentMethodCount] = await Promise.all([
+    const [guest, selectedRooms, paymentMethodCount] = await Promise.all([
       prisma.customer.findFirst({ where: { id: customerId, businessId: user.businessId, locationId: user.locationId } }),
-      prisma.room.count({ where: { id: { in: roomIds }, locationId: user.locationId } }),
+      prisma.room.findMany({ where: { id: { in: roomIds }, locationId: user.locationId }, select: { id: true, status: true } }),
       prisma.customLabels.count({ where: { id: { in: paymentIds }, locationId: user.locationId, type: "payment", isActive: true } }),
     ]);
-    if (!guest || roomCount !== roomIds.length || paymentMethodCount !== paymentIds.length) {
+    if (!guest || selectedRooms.length !== roomIds.length || paymentMethodCount !== paymentIds.length) {
       res.status(400).json({ message: "Guest, rooms and payment methods must belong to the selected hotel" });
+      return;
+    }
+    const maintenanceRoomIds = selectedRooms.filter(room => room.status === "maintenance").map(room => room.id);
+    if (maintenanceRoomIds.length) {
+      res.status(409).json({ message: "Rooms under maintenance cannot be booked.", unavailableRooms: maintenanceRoomIds });
       return;
     }
 
@@ -428,47 +433,70 @@ export const fetchReservationCalendar = async (req: Request, res: Response) => {
       return;
     }
 
-    const rooms = await prisma.room.findMany({
-      where: { locationId: user.locationId },
-      orderBy: [{ floor: "asc" }, { roomNumber: "asc" }],
-      select: {
-        id: true,
-        roomNumber: true,
-        floor: true,
-        status: true,
-        roomType: { select: { id: true, name: true } },
-        reservationLines: {
-          where: {
-            status: { notIn: ["cancelled", "no_show"] },
-            reservation: {
-              arrivalDate: { lt: end },
-              departureDate: { gt: start },
+    const filters = z.object({
+      roomTypeId: z.string().trim().optional(),
+      status: z.enum(RoomStatus).optional(),
+      search: z.string().trim().optional(),
+    }).safeParse(req.query);
+    if (!filters.success) {
+      res.status(400).json({ message: "Invalid calendar filters" });
+      return;
+    }
+    const { roomTypeId, status, search } = filters.data;
+    const [rooms, roomTypes] = await Promise.all([
+      prisma.room.findMany({
+        where: {
+          locationId: user.locationId,
+          roomTypeId,
+          status,
+          ...(search && { roomNumber: { contains: search } }),
+        },
+        orderBy: [{ floor: "asc" }, { roomNumber: "asc" }],
+        select: {
+          id: true,
+          roomNumber: true,
+          floor: true,
+          status: true,
+          roomType: { select: { id: true, name: true } },
+          reservationLines: {
+            where: {
+              status: { notIn: ["cancelled", "no_show"] },
+              reservation: {
+                arrivalDate: { lt: end },
+                departureDate: { gt: start },
+              },
             },
-          },
-          orderBy: { reservation: { arrivalDate: "asc" } },
-          select: {
-            id: true,
-            status: true,
-            checkInDate: true,
-            checkOutDate: true,
-            reservation: {
-              select: {
-                id: true,
-                bookingNumber: true,
-                arrivalDate: true,
-                departureDate: true,
-                customer: { select: { firstName: true, lastName: true, phone: true } },
+            orderBy: { reservation: { arrivalDate: "asc" } },
+            select: {
+              id: true,
+              status: true,
+              checkInDate: true,
+              checkOutDate: true,
+              reservation: {
+                select: {
+                  id: true,
+                  bookingNumber: true,
+                  arrivalDate: true,
+                  departureDate: true,
+                  customer: { select: { firstName: true, lastName: true, phone: true } },
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      prisma.roomType.findMany({
+        where: { locationId: user.locationId, rooms: { some: { locationId: user.locationId } } },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: { id: true, name: true },
+      }),
+    ]);
 
     res.status(200).json({
       data: {
         start: start.toISOString(),
         end: end.toISOString(),
+        roomTypes,
         rooms: rooms.map(({ reservationLines, ...room }) => ({
           ...room,
           stays: reservationLines.map(({ reservation, ...line }) => ({ ...line, ...reservation })),
@@ -484,6 +512,38 @@ export const fetchReservationCalendar = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Failed to load reservation calendar" });
   }
 };
+export const fetchCurrentRoomReservation = async (req: Request, res: Response) => {
+  const locationId = req.user?.locationId;
+  if (!locationId) {
+    res.status(403).json({ message: "Select a hotel to view room bookings." });
+    return;
+  }
+
+  try {
+    const line = await prisma.reservationLine.findFirst({
+      where: {
+        roomId: String(req.params.roomId),
+        status: "checked_in",
+        room: { locationId, status: "occupied" },
+        reservation: { locationId },
+      },
+      orderBy: [{ checkInDate: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+      select: { reservationId: true },
+    });
+    if (!line) {
+      res.status(404).json({ message: "No checked-in booking found for this room." });
+      return;
+    }
+    res.json(line);
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+      endpoint: "/api/v1/reservations/current-room/:roomId",
+      method: "GET",
+    });
+    res.status(500).json({ message: "Failed to load the room’s current booking." });
+  }
+};
+
 export const fetchReservationById = async (req: Request, res: Response) => {
   const { reservationId } = req.params;
   try {
@@ -559,6 +619,130 @@ export const fetchReservationById = async (req: Request, res: Response) => {
     res.status(500).json({
       message: "Failed to fetch reservation by id",
     });
+  }
+};
+
+async function getReservationBalance(
+  db: Prisma.TransactionClient,
+  reservationId: string,
+  locationId: string,
+  totalAmount: Prisma.Decimal,
+) {
+  const allocations = await db.paymentAllocation.findMany({
+    where: { transactionType: "reservation", transactionId: reservationId, payment: { locationId } },
+    select: { amountApplied: true, payment: { select: { direction: true } } },
+  });
+  const paid = allocations.reduce((sum, entry) => entry.payment.direction === "ingoing"
+    ? sum.plus(entry.amountApplied)
+    : sum.minus(entry.amountApplied), new Prisma.Decimal(0));
+  return Prisma.Decimal.max(totalAmount.minus(paid), 0);
+}
+
+export const fetchReservationBalance = async (req: Request, res: Response) => {
+  const locationId = req.user?.locationId;
+  if (!locationId) {
+    res.status(403).json({ message: "Select a hotel to view the booking balance." });
+    return;
+  }
+  try {
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: String(req.params.reservationId), locationId },
+      select: { id: true, totalAmount: true, paymentStatus: true },
+    });
+    if (!reservation) {
+      res.status(404).json({ message: "Booking not found." });
+      return;
+    }
+    const balance = await getReservationBalance(prisma, reservation.id, locationId, reservation.totalAmount);
+    res.json({ balance, paymentStatus: reservation.paymentStatus });
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), { endpoint: "/api/v1/reservations/:id/payment-balance", method: "GET" });
+    res.status(500).json({ message: "Could not load the booking balance." });
+  }
+};
+
+const receivePaymentSchema = z.object({
+  paymentId: z.uuid(),
+  methods: z.array(z.object({
+    paymentMethodId: z.string().min(1),
+    amountCents: z.number().int().positive().max(9_999_999_999),
+  })).min(1),
+});
+
+export const receiveReservationPayment = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user?.locationId) {
+    res.status(403).json({ message: "Select a hotel to receive a booking payment." });
+    return;
+  }
+  const input = receivePaymentSchema.safeParse(req.body);
+  if (!input.success || new Set(input.data.methods.map(method => method.paymentMethodId)).size !== input.data.methods.length) {
+    res.status(400).json({ message: "Enter a positive amount for each selected payment method." });
+    return;
+  }
+
+  const reservationId = String(req.params.reservationId);
+  const { paymentId, methods } = input.data;
+  const amount = methods.reduce((sum, method) => sum.plus(new Prisma.Decimal(method.amountCents).div(100)), new Prisma.Decimal(0));
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const [reservation] = await tx.$queryRaw<{
+        id: string; customerId: string; bookingNumber: string | null; totalAmount: Prisma.Decimal;
+        paymentStatus: PaymentStatus;
+      }[]>`
+        SELECT id, customerId, bookingNumber, totalAmount, paymentStatus FROM Reservation
+        WHERE id = ${reservationId} AND locationId = ${user.locationId} FOR UPDATE
+      `;
+      if (!reservation) return { status: 404, body: { message: "Booking not found." } };
+      const balance = await getReservationBalance(tx, reservation.id, user.locationId, reservation.totalAmount);
+      const existingPayment = await tx.payment.findUnique({
+        where: { id: paymentId, locationId: user.locationId, allocations: { some: { transactionId: reservationId, transactionType: "reservation" } } },
+        select: { id: true },
+      });
+      if (existingPayment) return { status: 200, body: { balance, paymentStatus: reservation.paymentStatus } };
+      if (reservation.paymentStatus === "paid" || balance.isZero()) {
+        return { status: 409, body: { message: "This booking has no outstanding balance.", balance } };
+      }
+      if (amount.gt(balance)) {
+        return { status: 409, body: { message: "Payment exceeds the current booking balance.", balance } };
+      }
+      const activeMethods = await tx.customLabels.count({
+        where: { id: { in: methods.map(method => method.paymentMethodId) }, locationId: user.locationId, type: "payment", isActive: true },
+      });
+      if (activeMethods !== methods.length) {
+        return { status: 400, body: { message: "Select active payment methods for this hotel." } };
+      }
+      await tx.payment.create({
+        data: {
+          id: paymentId,
+          locationId: user.locationId,
+          contactType: "customer",
+          contactId: reservation.customerId,
+          createdById: user.id,
+          amount,
+          direction: "ingoing",
+          paymentDate: new Date(),
+          reference: reservation.bookingNumber,
+          paymentMethods: {
+            create: methods.map(method => ({
+              paymentMethodId: method.paymentMethodId,
+              amount: new Prisma.Decimal(method.amountCents).div(100),
+            })),
+          },
+          allocations: {
+            create: { amountApplied: amount, transactionId: reservationId, transactionType: "reservation", allocationType: "reservation" },
+          },
+        },
+      });
+      const remaining = balance.minus(amount);
+      const paymentStatus = remaining.isZero() ? "paid" : "partially_paid";
+      await tx.reservation.update({ where: { id: reservationId, locationId: user.locationId }, data: { paymentStatus } });
+      return { status: 200, body: { balance: remaining, paymentStatus } };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    res.status(result.status).json(result.body);
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), { endpoint: "/api/v1/reservations/:id/payment", method: "POST" });
+    res.status(500).json({ message: "Could not record the booking payment." });
   }
 };
 

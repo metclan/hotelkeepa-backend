@@ -8,6 +8,9 @@ type Permission = {
   name: string;
   code: string;
 };
+export const hiddenPermissionCodes = [
+  "rooms:delete", "room:types:delete", "guests:edit", "guests:delete", "users:delete", "users:invite",
+];
 export const permissionGroups: PermissionGroup = [
   { name: "Point of Sale", code: "pos", description: "Operate the sales register", permissions: [{ name: "Use Point of Sale", code: "sales:pos" }] },
   {
@@ -36,6 +39,7 @@ export const permissionGroups: PermissionGroup = [
         name: "View Dashboard",
         code: "dashboard:view",
       },
+      { name: "View Dashboard Revenue", code: "dashboard:revenue:view" },
     ],
   },
   {
@@ -55,6 +59,7 @@ export const permissionGroups: PermissionGroup = [
         name: "Edit Rooms",
         code: "rooms:edit",
       },
+      { name: "Update Room Status", code: "rooms:status:update" },
       {
         name: "Delete Rooms",
         code: "rooms:delete",
@@ -101,6 +106,7 @@ export const permissionGroups: PermissionGroup = [
         name: "Edit Bookings",
         code: "bookings:edit",
       },
+      { name: "Receive Booking Payments", code: "bookings:payments:receive" },
       {
         name: "Print Bookings",
         code: "bookings:print",

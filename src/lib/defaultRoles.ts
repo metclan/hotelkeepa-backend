@@ -14,10 +14,10 @@ export const DEFAULT_ROLES = [
       "bookings:view",
       "bookings:create",
       "bookings:edit",
+      "bookings:payments:receive",
       "bookings:print",
       "guests:view",
       "guests:create",
-      "guests:edit",
       "reports:view:bookings",
       "reports:view:occupancy",
     ],
@@ -27,7 +27,22 @@ export const DEFAULT_ROLES = [
     isAdmin: false,
     permissions: [
       "rooms:view",
-      "rooms:edit", // only edit to update room status
+      "rooms:status:update",
     ],
+  },
+  {
+    name: "Cashier",
+    isAdmin: false,
+    permissions: ["sales:pos"],
+  },
+  {
+    name: "Inventory",
+    isAdmin: false,
+    permissions: ["products:view", "products:manage"],
+  },
+  {
+    name: "Finance",
+    isAdmin: false,
+    permissions: ["dashboard:view", "dashboard:revenue:view", "reports:view:bookings", "reports:view:payments"],
   },
 ];

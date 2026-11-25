@@ -123,6 +123,7 @@ export const fetchRooms = async (req: Request, res: Response) => {
             contains: search,
           },
         },
+        { floor: { contains: search } },
       ];
     }
     if (roomTypeId) where.roomTypeId = { in: roomTypeId.split(",").filter(Boolean) };
@@ -200,6 +201,28 @@ export const fetchRooms = async (req: Request, res: Response) => {
     });
   }
 };
+export const fetchRoomFilterOptions = async (req: Request, res: Response) => {
+  const locationId = req.user?.locationId;
+  if (!locationId) {
+    res.status(403).json({ message: "Select a hotel to view room filters." });
+    return;
+  }
+  try {
+    const roomTypes = await prisma.roomType.findMany({
+      where: { locationId },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: { id: true, name: true },
+    });
+    res.json({ roomTypes });
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), {
+      endpoint: "/api/v1/rooms/filter-options",
+      method: "GET",
+    });
+    res.status(500).json({ message: "Failed to load room filter options." });
+  }
+};
+
 export const fetchRoomById = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
@@ -218,10 +241,14 @@ export const fetchRoomById = async (req: Request, res: Response) => {
         locationId: user.locationId,
       },
       select: {
+        id: true,
         roomNumber: true,
         roomTypeId: true,
         floor: true,
         status: true,
+        roomType: {
+          select: { id: true, name: true, pricePerNight: true, maxAdults: true, maxChildren: true, maxOccupancy: true },
+        },
       },
     });
     if (!room) {
@@ -243,6 +270,34 @@ export const fetchRoomById = async (req: Request, res: Response) => {
     });
   }
 };
+export const updateRoomStatus = async (req: Request, res: Response) => {
+  const locationId = req.user?.locationId;
+  const status = z.enum(["available", "maintenance"]).safeParse(req.body?.status);
+  if (!locationId || !status.success) {
+    res.status(400).json({ message: "Choose Available or Maintenance for a room at the selected hotel." });
+    return;
+  }
+  try {
+    const result = await prisma.room.updateMany({
+      where: {
+        id: String(req.params.id),
+        locationId,
+        status: { in: ["available", "maintenance"] },
+        reservationLines: { none: { status: "checked_in" } },
+      },
+      data: { status: status.data },
+    });
+    if (!result.count) {
+      res.status(409).json({ message: "Only available rooms or rooms under maintenance can be updated here." });
+      return;
+    }
+    res.json({ status: status.data });
+  } catch (error) {
+    sendTelegramError(error instanceof Error ? error : new Error(String(error)), { endpoint: "/api/v1/rooms/:id/status", method: "PATCH" });
+    res.status(500).json({ message: "Failed to update room status." });
+  }
+};
+
 export const editRoom = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
