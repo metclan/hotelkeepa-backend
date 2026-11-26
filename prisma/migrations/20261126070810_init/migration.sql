@@ -6,6 +6,9 @@ CREATE TABLE `user` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `emailVerified` BOOLEAN NOT NULL DEFAULT false,
+    `verificationEmailWindowStart` DATETIME(3) NULL,
+    `verificationEmailLastSentAt` DATETIME(3) NULL,
+    `verificationEmailsSent` INTEGER NOT NULL DEFAULT 0,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `onboardingStage` INTEGER NOT NULL DEFAULT 1,
     `isOwner` BOOLEAN NOT NULL DEFAULT false,
@@ -98,12 +101,16 @@ CREATE TABLE `Location` (
     `timezone` VARCHAR(191) NOT NULL DEFAULT 'Africa/Lagos',
     `logo` MEDIUMTEXT NULL,
     `logoKey` VARCHAR(1024) NULL,
+    `trialEndsAt` DATETIME(3) NULL,
+    `lastActivityAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `deletionNoticeAt` DATETIME(3) NULL,
     `setupPreset` ENUM('reservations_only', 'reservations_bar', 'full_service') NOT NULL DEFAULT 'reservations_only',
     `defaultCheckoutTime` VARCHAR(191) NOT NULL DEFAULT '12:00',
     `defaultCheckinTime` VARCHAR(191) NOT NULL DEFAULT '12:00',
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
+    INDEX `Location_lastActivityAt_idx`(`lastActivityAt`),
     UNIQUE INDEX `Location_businessId_name_key`(`businessId`, `name`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -287,6 +294,7 @@ CREATE TABLE `Subscription` (
     `planId` VARCHAR(191) NOT NULL,
     `startDate` DATETIME(3) NOT NULL,
     `endDate` DATETIME(3) NULL,
+    `renewalReminderAt` DATETIME(3) NULL,
     `locationId` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -299,6 +307,7 @@ CREATE TABLE `SubscriptionPayment` (
     `id` VARCHAR(191) NOT NULL,
     `subscriptionId` VARCHAR(191) NOT NULL,
     `amount` INTEGER NOT NULL,
+    `currency` CHAR(3) NULL,
     `paidAt` DATETIME(3) NOT NULL,
     `provider` VARCHAR(191) NULL,
     `providerReference` VARCHAR(191) NULL,
@@ -308,6 +317,24 @@ CREATE TABLE `SubscriptionPayment` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `SubscriptionCheckout` (
+    `id` VARCHAR(191) NOT NULL,
+    `locationId` VARCHAR(191) NOT NULL,
+    `planKey` VARCHAR(191) NOT NULL,
+    `amount` INTEGER NOT NULL,
+    `currency` CHAR(3) NOT NULL,
+    `email` VARCHAR(191) NOT NULL,
+    `checkoutId` VARCHAR(191) NULL,
+    `checkoutUrl` TEXT NULL,
+    `closedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `SubscriptionCheckout_checkoutId_key`(`checkoutId`),
+    INDEX `SubscriptionCheckout_locationId_closedAt_idx`(`locationId`, `closedAt`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -755,6 +782,9 @@ ALTER TABLE `SubscriptionPayment` ADD CONSTRAINT `SubscriptionPayment_businessId
 
 -- AddForeignKey
 ALTER TABLE `SubscriptionPayment` ADD CONSTRAINT `SubscriptionPayment_locationId_fkey` FOREIGN KEY (`locationId`) REFERENCES `Location`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SubscriptionCheckout` ADD CONSTRAINT `SubscriptionCheckout_locationId_fkey` FOREIGN KEY (`locationId`) REFERENCES `Location`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `session` ADD CONSTRAINT `session_activeLocationId_fkey` FOREIGN KEY (`activeLocationId`) REFERENCES `Location`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
