@@ -1,3 +1,4 @@
+import { requireHotelSubscription } from "../../middleware/hotel-subscription.js";
 import { requirePermission } from "../../middleware/middleware.js";
 import {
   createBooking,
@@ -27,6 +28,6 @@ router.post("/:reservationLineId/check-in", requirePermission("bookings:edit"), 
 router.post("/:reservationLineId/check-out", requirePermission("bookings:edit"), checkOut);
 router.get("/:reservationId", requirePermission("bookings:view"), fetchReservationById);
 router.delete("/:reservationId", requirePermission("bookings:delete"), deleteReservation);
-router.post("/", requirePermission("bookings:create"), createBooking);
+router.post("/", requirePermission("bookings:create"), requireHotelSubscription, createBooking);
 
 export { router as reservationRouter };

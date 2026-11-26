@@ -68,7 +68,7 @@ export const onboardNewBusiness = async (req: Request, res: Response) => {
       }
       await tx.location.update({
         where: { id: existingLocation.id },
-        data: { name: hotelName, setupPreset, address, city, state, defaultCheckoutTime, timezone, logo: uploadedLogo?.url ?? null, logoKey: uploadedLogo?.key ?? null },
+        data: { trialEndsAt: existingLocation.trialEndsAt ?? new Date(Date.now() + 3 * 86_400_000), name: hotelName, setupPreset, address, city, state, defaultCheckoutTime, timezone, logo: uploadedLogo?.url ?? null, logoKey: uploadedLogo?.key ?? null },
       });
       const departments = setupPreset === "full_service"
         ? [

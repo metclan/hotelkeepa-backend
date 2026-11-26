@@ -5,6 +5,9 @@ import { canAccessLocation, canManageDepartments } from "../lib/workspace-policy
 import { locationSchema, departmentSchema, updateDepartmentSchema, departmentMembersSchema, locationMemberSchema } from "../lib/workspace-schema.js";
 import { DEFAULT_ROLES } from "../lib/defaultRoles.js";
 
+import { bachsConfigured } from "../lib/bachs.js";
+import { subscriptionFeatures, subscriptionPlans } from "../lib/subscription-plans.js";
+
 export class WorkspaceError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -54,6 +57,61 @@ export function workspaceHandlers(db: PrismaClient) {
         db.location.count({ where }),
       ]);
       res.json({ data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    }),
+    locationSubscription: wrap(async (req, res) => {
+      const { businessId, locationId } = scoped(req);
+      assert(req.user?.isOwner || req.locationAdmin, 403, "Only hotel admins can view subscription pricing");
+      const now = new Date();
+      const [hotel, subscription] = await db.$transaction([
+        db.location.findFirst({
+          where: { id: locationId, businessId, isActive: true, isDeleted: false },
+          select: {
+            id: true, name: true, timezone: true, trialEndsAt: true,
+            subscriptions: {
+              where: { businessId, startDate: { gt: now } }, take: 1, orderBy: { startDate: "asc" },
+              select: { startDate: true, endDate: true, plan: { select: { name: true } } },
+            },
+            subscriptionPayments: {
+              where: { businessId }, take: 50, orderBy: { paidAt: "desc" },
+              select: { id: true, amount: true, currency: true, paidAt: true, status: true,
+                subscription: { select: { plan: { select: { name: true } } } } },
+            },
+            subscriptionCheckouts: { where: { closedAt: null }, take: 1, select: { amount: true, currency: true } },
+            _count: { select: {
+              rooms: true,
+              userAccess: { where: { isActive: true, user: { isOwner: false, isActive: true } } },
+              departments: { where: { isActive: true } },
+              products: { where: { disabledAt: null } },
+            } },
+            business: { select: { _count: { select: { users: { where: { isOwner: true, isActive: true } } } } } },
+          },
+        }),
+        db.subscription.findFirst({
+          where: { businessId, locationId, startDate: { lte: now } },
+          orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+          select: { startDate: true, endDate: true, plan: { select: { name: true } } },
+        }),
+      ]);
+      assert(hotel, 404, "Hotel not found");
+      const usage = {
+        rooms: hotel._count.rooms,
+        users: hotel._count.userAccess + hotel.business._count.users,
+        departments: hotel._count.departments,
+        products: hotel._count.products,
+      };
+      res.json({
+        location: { id: hotel.id, name: hotel.name, timezone: hotel.timezone },
+        usage,
+        plans: subscriptionPlans,
+        features: subscriptionFeatures,
+        roomPlanId: subscriptionPlans.find((plan) => usage.rooms <= plan.maxRooms)?.id ?? null,
+        subscription,
+        trialEndsAt: hotel.trialEndsAt ?? null,
+        nextSubscription: hotel.subscriptions?.[0] ?? null,
+        payments: hotel.subscriptionPayments ?? [],
+        checkoutAvailable: bachsConfigured(),
+        pendingCheckout: hotel.subscriptionCheckouts?.[0] ?? null,
+      });
     }),
     createLocation: wrap(async (req, res) => {
       const { businessId, userId } = scoped(req);

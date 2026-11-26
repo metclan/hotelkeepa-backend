@@ -21,6 +21,9 @@ model User {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   emailVerified Boolean        @default(false)
+  verificationEmailWindowStart DateTime?
+  verificationEmailLastSentAt  DateTime?
+  verificationEmailsSent       Int @default(0)
   isActive      Boolean        @default(true)
   onboardingStage Int       @default(1)
   isOwner       Boolean        @default(false)
@@ -137,6 +140,9 @@ model Location {
   // Public R2 URL; image bytes are never persisted here.
   logo String? @db.MediumText
   logoKey String? @db.VarChar(1024)
+  trialEndsAt DateTime?
+  lastActivityAt DateTime @default(now())
+  deletionNoticeAt DateTime?
   setupPreset HotelSetupPreset @default(reservations_only)
   departments Department[]
   diningTables DiningTable[]
@@ -155,6 +161,7 @@ model Location {
   users    User[]
   subscriptionPayments SubscriptionPayment[]
   subscriptions Subscription[]
+  subscriptionCheckouts SubscriptionCheckout[]
   documentSequences DocumentSequence[]
   reservations  Reservation[]
   customers Customer[]
@@ -168,6 +175,7 @@ model Location {
 
   // Constraints 
   @@unique([businessId, name])
+  @@index([lastActivityAt])
 }
 model CustomLabels {
   id String @id @default(uuid())
@@ -360,6 +368,7 @@ model Subscription {
   planId     String
   startDate  DateTime
   endDate    DateTime?
+  renewalReminderAt DateTime?
   locationId String?
 
   // Relations
@@ -376,6 +385,7 @@ model SubscriptionPayment {
   id String @id @default(uuid())
   subscriptionId    String
   amount            Int
+  currency          String? @db.Char(3)
   paidAt            DateTime
   provider          String?
   providerReference String?
@@ -391,6 +401,22 @@ model SubscriptionPayment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+model SubscriptionCheckout {
+  id          String   @id @default(uuid())
+  locationId  String
+  planKey     String
+  amount      Int
+  currency    String   @db.Char(3)
+  email       String
+  checkoutId  String?  @unique
+  checkoutUrl String?  @db.Text
+  closedAt    DateTime?
+  createdAt   DateTime @default(now())
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, closedAt])
+}
+
 enum SubscriptionPaymentStatus {
   PENDING
   SUCCESS

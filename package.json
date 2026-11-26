@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts",
+    "billing:retention": "node --env-file=.env dist/jobs/hotel-retention.js",
+    "billing:reminders": "node --env-file=.env dist/jobs/subscription-reminders.js",
     "prisma:seed": "tsx --env-file=.env prisma/seed.ts"
   },
   "keywords": [],

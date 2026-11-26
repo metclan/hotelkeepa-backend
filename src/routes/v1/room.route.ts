@@ -1,3 +1,4 @@
+import { requireHotelSubscription } from "../../middleware/hotel-subscription.js";
 import { requirePermission } from "../../middleware/middleware.js";
 import {
   createRoom,
@@ -14,8 +15,8 @@ import { createBulkRooms } from "../../controllers/bulk-room.controller.js";
 const router = Router();
 router.get("/", requirePermission("rooms:view"), fetchRooms);
 router.get("/filter-options", requirePermission("rooms:view"), fetchRoomFilterOptions);
-router.post("/", requirePermission("rooms:create"), createRoom);
-router.post("/bulk", requirePermission("rooms:create"), createBulkRooms);
+router.post("/", requirePermission("rooms:create"), requireHotelSubscription, createRoom);
+router.post("/bulk", requirePermission("rooms:create"), requireHotelSubscription, createBulkRooms);
 router.get("/:id", requirePermission("rooms:view"), fetchRoomById);
 router.patch("/:id/status", requirePermission("rooms:view", "rooms:status:update"), updateRoomStatus);
 router.patch("/:id/edit", requirePermission("rooms:edit"), editRoom);

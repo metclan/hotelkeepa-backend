@@ -1,3 +1,4 @@
+import { requireHotelSubscription } from "../../middleware/hotel-subscription.js";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { readFileSync } from "node:fs";
@@ -61,7 +62,7 @@ router.get("/register", handle(async (req, res, locationId, userId) => {
   res.json(await registerContext(req, locationId, userId));
 }));
 
-router.post("/register/open", handle(async (req, res, locationId, userId) => {
+router.post("/register/open", requireHotelSubscription, handle(async (req, res, locationId, userId) => {
   const context = await registerContext(req, locationId, userId);
   const input = z.object({ departmentId: z.string().min(1) }).parse(req.body);
   if (!context.departments.some(department => department.id === input.departmentId)) {
@@ -268,7 +269,7 @@ const orderSchema = z.object({
   items: z.array(z.object({ productId: z.string().min(1), quantity: z.number().positive().max(99999999).multipleOf(0.001) })).min(1).max(100),
 }).strict();
 
-router.post("/orders", handle(async (req, res, locationId, userId) => {
+router.post("/orders", requireHotelSubscription, handle(async (req, res, locationId, userId) => {
   const input = orderSchema.parse(req.body);
   const ids = input.items.map(item => item.productId).sort();
   if (new Set(ids).size !== ids.length) throw new PosError("Each product must appear once.");

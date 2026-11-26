@@ -201,6 +201,10 @@ export const acceptInvitation = async (req: Request, res: Response) => {
     res.status(400).json({ message: "Invalid or expired invite" });
     return;
   }
+  if (await prisma.user.findUnique({ where: { email: invitation.email.toLowerCase() }, select: { id: true } })) {
+    res.status(409).json({ message: "An account already exists for this email" });
+    return;
+  }
   const newUser = await auth.api.signUpEmail({
     body: {
       email: invitation.email,
@@ -208,22 +212,25 @@ export const acceptInvitation = async (req: Request, res: Response) => {
       password,
     },
   });
-  await prisma.user.update({
-    where: { id: newUser.user.id },
-    data: {
-      roleId: invitation.roleId,
-      locationId: invitation.locationId,
-      businessId: invitation.businessId,
-      isOwner: false,
-      onboardingStage: 2,
-    },
-  });
-  await prisma.userLocation.create({
-    data: { userId: newUser.user.id, locationId: invitation.locationId, roleId: invitation.roleId },
-  });
-  await prisma.invitation.update({
-    where: { id: invitation.id },
-    data: { status: "accepted", acceptedAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: newUser.user.id },
+      data: {
+        roleId: invitation.roleId,
+        locationId: invitation.locationId,
+        businessId: invitation.businessId,
+        isOwner: false,
+        emailVerified: true,
+        onboardingStage: 2,
+      },
+    });
+    await tx.userLocation.create({
+      data: { userId: newUser.user.id, locationId: invitation.locationId, roleId: invitation.roleId },
+    });
+    await tx.invitation.update({
+      where: { id: invitation.id },
+      data: { status: "accepted", acceptedAt: new Date() },
+    });
   });
   res.json({ message: "Account created successfully, please sign in" });
 };

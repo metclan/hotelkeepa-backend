@@ -193,3 +193,46 @@ test("hotel role permissions protect operational endpoints and admin/owner acces
     assert.equal(passed, true);
   }
 });
+
+test("subscription prices follow the selected hotel's room count and are admin-only", async () => {
+  let rooms = 0;
+  const db = {
+    $transaction: (queries: Promise<unknown>[]) => Promise.all(queries),
+    location: {
+      findFirst: async ({ where }: { where: unknown }) => {
+        assert.deepEqual(where, { id: "hotel-a", businessId: "business-a", isActive: true, isDeleted: false });
+        return {
+          id: "hotel-a", name: "Hotel A",
+          _count: { rooms, userAccess: 2, departments: 1, products: 3 },
+          business: { _count: { users: 1 } },
+        };
+      },
+    },
+    subscription: {
+      findFirst: async ({ where }: { where: { locationId: string; businessId: string } }) => {
+        assert.equal(where.locationId, "hotel-a");
+        assert.equal(where.businessId, "business-a");
+        return null;
+      },
+    },
+  };
+
+  assert.equal((await invoke({}, "locationSubscription", request())).statusCode, 403);
+  const cases = [
+    { count: 0, price: [150_000, 250] },
+    { count: 20, price: [150_000, 250] },
+    { count: 21, price: [250_000, 320] },
+    { count: 35, price: [250_000, 320] },
+    { count: 36, price: [350_000, 499] },
+    { count: 50, price: [350_000, 499] },
+    { count: 51, price: null },
+  ];
+  for (const { count, price } of cases) {
+    rooms = count;
+    const result = await invoke(db, "locationSubscription", request({ locationAdmin: true }));
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(result.body.usage, { rooms, users: 3, departments: 1, products: 3 });
+    const plan = result.body.plans.find(({ id }: { id: string }) => id === result.body.roomPlanId);
+    assert.deepEqual(plan ? [plan.ngn, plan.usd] : null, price);
+  }
+});

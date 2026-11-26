@@ -54,3 +54,37 @@ Open Settings → Hotel locations to create a hotel and switch to it, or use the
 The Create Room modal has Create room and Create bulk rooms tabs. Bulk creation accepts an inclusive numeric range, one room type, an optional shared floor and a shared status. Leading zeros are preserved; batches are limited to 500 rooms.
 
 `POST /api/v1/rooms/bulk` requires rooms:create and uses the selected hotel from the authenticated session. The request includes startNumber/endNumber as strings, roomTypeId, optional floor and status. The room type must belong to that hotel. Any existing room number returns 409 with conflicts and cancels the entire batch. The transactional createMany also rejects concurrent unique-key conflicts. No schema migration is needed for this endpoint.
+
+### Hotel subscription checkout
+
+Set `BACHS_API_KEY` and `BACHS_WEBHOOK_SECRET` on the backend. Register
+`https://<api-host>/api/v1/webhooks/bachs` in the Bachs Developer Portal for
+`collection.succeeded`. Use the signing secret for that endpoint. Use the
+matching sandbox or live endpoint and key, and enable the NGN and USD checkout
+methods on the Bachs account. Set `FRONTEND_URL` to the app's public origin.
+
+Apply Prisma migrations before starting the updated backend. Business owners and
+hotel admins can buy an annual term from Settings → Subscription. A confirmed
+checkout grants one year to the selected hotel. Renewal is manual.
+
+Owner signups send verification email through the existing Amazon SES
+configuration. An unverified owner can request another link from the sign-in
+screen. Signup and resends share a limit of three verification emails per
+one-hour window, with at least 60 seconds between sends. Staff verify their
+address by accepting the emailed invitation.
+
+After building the backend, run `npm run billing:reminders` daily from the
+backend directory with the same database, frontend URL and SES configuration
+as the API. It sends a renewal reminder during the last 30 days of a term
+when a renewal has yet to be purchased.
+
+
+Run `npm run billing:retention` daily from the same backend deployment, with one
+scheduled instance. `npm run billing:retention -- --dry-run` counts candidates
+without sending mail or deleting data. Hotels qualify after 180 days without
+authenticated activity. Active trials, active or scheduled paid terms, and
+unresolved Bachs checkouts are excluded. Deletion waits at least 30 days after
+the owner warning is successfully sent. Opening that hotel
+again resets its inactivity clock. Business accounts are removed with the last
+hotel, while other hotels under the business retain their data and accounts.
+The first hotel starts its 72-hour trial when the owner completes onboarding.

@@ -1,11 +1,49 @@
 import { betterAuth } from "better-auth";
 import { PrismaClient } from "./generated/prisma/client.js";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { sendEmail, sendWelcomeEmail, escapeHtml } from "./lib/email.service.js";
 import { DEFAULT_ROLES } from "./lib/defaultRoles.js";
 
 const prisma = new PrismaClient();
+
+const pendingInvitation = (email: string) => prisma.invitation.findFirst({
+  where: { email, status: "pending", expiresAt: { gt: new Date() } },
+  select: { id: true },
+});
+
+async function reserveVerificationEmail(userId: string) {
+  const now = new Date();
+  const windowCutoff = new Date(now.getTime() - 60 * 60 * 1000);
+  const cooldownCutoff = new Date(now.getTime() - 60 * 1000);
+  const available = {
+    id: userId,
+    emailVerified: false,
+    OR: [{ verificationEmailLastSentAt: null }, { verificationEmailLastSentAt: { lte: cooldownCutoff } }],
+  };
+  // Conditional writes let concurrent requests share the same account limit.
+  const reset = await prisma.user.updateMany({
+    where: {
+      ...available,
+      AND: [{ OR: [{ verificationEmailWindowStart: null }, { verificationEmailWindowStart: { lte: windowCutoff } }] }],
+    },
+    data: {
+      verificationEmailWindowStart: now,
+      verificationEmailLastSentAt: now,
+      verificationEmailsSent: 1,
+    },
+  });
+  if (reset.count) return true;
+  const increment = await prisma.user.updateMany({
+    where: {
+      ...available,
+      verificationEmailWindowStart: { gt: windowCutoff },
+      verificationEmailsSent: { lt: 3 },
+    },
+    data: { verificationEmailLastSentAt: now, verificationEmailsSent: { increment: 1 } },
+  });
+  return increment.count > 0;
+}
 
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -43,22 +81,19 @@ export const auth = betterAuth({
     },
   },
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-up/email" || !ctx.request) return;
+      const email = ctx.body?.email?.trim().toLowerCase();
+      if (email && await pendingInvitation(email)) {
+        throw new APIError("BAD_REQUEST", { message: "Use the invitation link sent to your email to create your account." });
+      }
+    }),
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/sign-up/email") return;
-      const newUser = ctx.context.newSession?.user;
-      if (!newUser) return;
-      const invitation = await prisma.invitation.findFirst({
-        where: {
-          email: newUser.email,
-          status: "pending",
-        },
-      });
-      if (invitation) {
-        await sendWelcomeEmail({ to: newUser.email, name: newUser.name }).catch(() => {
-          console.error("SES welcome email failed after signup");
-        });
-        return;
-      }
+      const result = ctx.context.returned as { user?: { id: string } } | undefined;
+      if (!result?.user) return;
+      const newUser = await prisma.user.findUnique({ where: { id: result.user.id } });
+      if (!newUser || newUser.businessId || await pendingInvitation(newUser.email)) return;
       await prisma.$transaction(async (tx) => {
         // Create a new business
         const business = await tx.business.create({
@@ -129,10 +164,6 @@ export const auth = betterAuth({
           },
         });
       });
-      // Account creation is durable even if SES is temporarily unavailable.
-      await sendWelcomeEmail({ to: newUser.email, name: newUser.name }).catch(() => {
-        console.error("SES welcome email failed after signup");
-      });
     }),
   },
   trustedOrigins: [
@@ -142,7 +173,7 @@ export const auth = betterAuth({
   ],
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false,
+    requireEmailVerification: true,
     sendResetPassword: async ({ user, token }) => {
       const resetUrl = new URL("/reset-password", process.env.FRONTEND_URL);
       resetUrl.searchParams.set("token", token);
@@ -176,11 +207,23 @@ export const auth = betterAuth({
     },
   },
   emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
+    sendOnSignIn: false,
+    sendVerificationEmail: async ({ user, url }, request) => {
+      if (!request && await pendingInvitation(user.email)) return;
+      if (!(await reserveVerificationEmail(user.id))) return;
+      const link = new URL(url);
+      const callback = new URL("/login", process.env.FRONTEND_URL || "https://hotelkeepa.com");
+      callback.searchParams.set("verified", "true");
+      link.searchParams.set("callbackURL", callback.href);
       await sendEmail({
         to: user.email,
-        subject: "Verify your email",
-        html: `Click here to verify your email : ${escapeHtml(url)}`,
+        subject: "Verify your Hotelkeepa email",
+        html: `<p>Hi ${escapeHtml(user.name)},</p><p><a href="${escapeHtml(link.href)}">Verify your email address</a> to finish setting up your Hotelkeepa account.</p>`,
+      }).catch(() => console.error("SES verification email delivery failed"));
+    },
+    afterEmailVerification: async (user) => {
+      await sendWelcomeEmail({ to: user.email, name: user.name }).catch(() => {
+        console.error("SES welcome email delivery failed");
       });
     },
   },

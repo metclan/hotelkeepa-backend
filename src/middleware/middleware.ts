@@ -67,6 +67,19 @@ export function createRequireAuth(db: PrismaClient, getSession: (headers: Reques
         res.status(409).json({ message: "Your selected hotel changed. Reload before saving." });
         return;
       }
+      const now = new Date();
+      if (location && location.lastActivityAt?.getTime() <= now.getTime() - 3_600_000) {
+        const activity = await db.location.updateMany({
+          where: { id: location.id, isDeleted: false, isActive: true, lastActivityAt: { lte: new Date(now.getTime() - 3_600_000) } },
+          data: { lastActivityAt: now, deletionNoticeAt: null },
+        });
+        if (!activity.count && !await db.location.findFirst({
+          where: { id: location.id, isDeleted: false, isActive: true }, select: { id: true },
+        })) {
+          res.status(409).json({ message: "This hotel is no longer available" });
+          return;
+        }
+      }
       next();
     } catch (err) {
       console.error("Could not resolve authenticated hotel access");
